@@ -82,9 +82,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 <span className="font-sans font-bold text-sm tracking-tight text-white">
                   PromptOS
                 </span>
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.2 rounded uppercase">
-                  AI
-                </span>
               </div>
             </a>
 

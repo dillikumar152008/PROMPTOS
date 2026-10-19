@@ -10,7 +10,11 @@ interface ChatThreadProps {
   messages: Message[];
   isLoading: boolean;
   errorMessage?: string | null;
-  onSendMessage: (payload: { textToSend: string; placeholderMap?: Record<string, string> }) => void;
+  onSendMessage: (payload: {
+    textToSend: string;
+    placeholderMap?: Record<string, string>;
+    files?: File[];
+  }) => void;
 }
 
 export const ChatThread: React.FC<ChatThreadProps> = ({

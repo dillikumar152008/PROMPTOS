@@ -22,8 +22,15 @@ export const AuthCard: React.FC<AuthCardProps> = ({ initialTab = 'login' }) => {
   const fromParam = searchParams.get('from');
   const nextParam = searchParams.get('next');
 
+  // Kill-switch: NEXT_PUBLIC_SIGNUPS_ENABLED must be the string 'true' to enable signups.
+  // This is a UI-only guard. Real enforcement is the Supabase Dashboard → Authentication →
+  // "Allow new users to sign up" toggle, which must be switched off separately.
+  const signupsEnabled = process.env.NEXT_PUBLIC_SIGNUPS_ENABLED === 'true';
+
   // Form State
-  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(
+    signupsEnabled ? initialTab : 'login'
+  );
   const [role, setRole] = useState<Role>(isValidRole(roleParam) ? roleParam : 'creator');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -32,10 +39,10 @@ export const AuthCard: React.FC<AuthCardProps> = ({ initialTab = 'login' }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync tab with props if prop changes
+  // Sync tab with props if prop changes (but never open signup when it's disabled)
   useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+    setActiveTab(signupsEnabled ? initialTab : 'login');
+  }, [initialTab, signupsEnabled]);
 
   // Preselect role from ?role= parameter
   useEffect(() => {
@@ -239,14 +246,15 @@ export const AuthCard: React.FC<AuthCardProps> = ({ initialTab = 'login' }) => {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — signup tab hidden when NEXT_PUBLIC_SIGNUPS_ENABLED is not 'true' */}
       <Tabs
         tabs={[
           { id: 'login', label: 'Log In' },
-          { id: 'signup', label: 'Sign Up' },
+          ...(signupsEnabled ? [{ id: 'signup', label: 'Sign Up' }] : []),
         ]}
         activeTab={activeTab}
         onChange={(tab) => {
+          if (!signupsEnabled && tab === 'signup') return;
           setActiveTab(tab as 'login' | 'signup');
           setErrorMsg(null);
           setPasswordError('');
@@ -394,19 +402,25 @@ export const AuthCard: React.FC<AuthCardProps> = ({ initialTab = 'login' }) => {
       {/* Switch Tab Prompt */}
       <div className="mt-6 pt-4 border-t border-zinc-800 text-center text-xs text-zinc-400">
         {activeTab === 'login' ? (
-          <span>
-            Don't have an account yet?{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('signup');
-                setErrorMsg(null);
-              }}
-              className="text-white font-medium hover:underline cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#2563eb]"
-            >
-              Sign up
-            </button>
-          </span>
+          signupsEnabled ? (
+            <span>
+              Don't have an account yet?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('signup');
+                  setErrorMsg(null);
+                }}
+                className="text-white font-medium hover:underline cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#2563eb]"
+              >
+                Sign up
+              </button>
+            </span>
+          ) : (
+            <span className="text-zinc-500">
+              Sign ups are temporarily closed. Existing users can log in.
+            </span>
+          )
         ) : (
           <span>
             Already have an account?{' '}
