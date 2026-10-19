@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D2818" />
+      <stop offset="100%" stop-color="#1B4332" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+  </defs>
+  <!-- Background Shield/Square with smooth rounded corners -->
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bgGrad)" stroke="#2D6A4F" stroke-width="4" />
+  
+  <!-- Botanical Prana Emblem -->
+  <!-- Classical Leaf / Ayush Energy Curve -->
+  <path d="M64 26 C44 42 40 68 56 86 C60 90 64 94 64 102 C64 94 68 90 72 86 C88 68 84 42 64 26 Z" 
+        fill="url(#goldGrad)" opacity="0.95" />
+  
+  <!-- Center Stem & Sunlight Axis -->
+  <path d="M64 36 L64 98" stroke="#0D2818" stroke-width="3.5" stroke-linecap="round" />
+  <path d="M64 52 Q54 62 48 68" stroke="#0D2818" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M64 64 Q74 74 80 80" stroke="#0D2818" stroke-width="2.5" stroke-linecap="round" />
+  
+  <!-- Golden Saffron Foundation Dot -->
+  <circle cx="64" cy="106" r="4" fill="#F97316" />
+</svg>
