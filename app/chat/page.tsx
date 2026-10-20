@@ -11,6 +11,7 @@ export default function NewChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [wasLastMasked, setWasLastMasked] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // In-memory ref for client-side placeholder restoration across turns (never persisted)
@@ -27,6 +28,7 @@ export default function NewChatPage() {
   }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setWasLastMasked(Boolean(placeholderMap && Object.keys(placeholderMap).length > 0));
 
     let displayContent = textToSend;
     if (files && files.length > 0) {
@@ -117,6 +119,7 @@ export default function NewChatPage() {
       messages={messages}
       isLoading={isLoading}
       errorMessage={errorMessage}
+      wasMasked={wasLastMasked}
       onSendMessage={handleSendMessage}
     />
   );

@@ -13,6 +13,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [wasLastMasked, setWasLastMasked] = useState(false);
   const [isFetchingHistory, setIsFetchingHistory] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -71,6 +72,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setWasLastMasked(Boolean(placeholderMap && Object.keys(placeholderMap).length > 0));
 
     let displayContent = textToSend;
     if (files && files.length > 0) {
@@ -150,7 +152,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
   if (isFetchingHistory) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#09090b] text-zinc-500 font-mono text-xs">
+      <div className="flex-1 flex items-center justify-center bg-[#212121] text-[#9b9b9b] font-sans text-xs">
         Loading conversation...
       </div>
     );
@@ -161,6 +163,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       messages={messages}
       isLoading={isLoading}
       errorMessage={errorMessage}
+      wasMasked={wasLastMasked}
       onSendMessage={handleSendMessage}
     />
   );
