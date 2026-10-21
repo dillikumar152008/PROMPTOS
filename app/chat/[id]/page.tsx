@@ -14,6 +14,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [wasLastMasked, setWasLastMasked] = useState(false);
+  const [historyTrimmed, setHistoryTrimmed] = useState(false);
   const [isFetchingHistory, setIsFetchingHistory] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -129,6 +130,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
       }
 
       const rawOutput = data?.output || '';
+      if (data?.historyTrimmed) {
+        setHistoryTrimmed(true);
+      }
 
       // Restore placeholders locally in the browser across all turns in this conversation
       const restoredOutput = restorePlaceholders(rawOutput, conversationMapRef.current);
@@ -164,6 +168,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       isLoading={isLoading}
       errorMessage={errorMessage}
       wasMasked={wasLastMasked}
+      historyTrimmed={historyTrimmed}
       onSendMessage={handleSendMessage}
     />
   );

@@ -10,8 +10,10 @@ import {
   Sparkles,
   Check,
   Shield,
+  ShieldAlert,
   Image as ImageIcon,
   FileText,
+  Languages,
 } from 'lucide-react';
 import {
   scanPrompt,
@@ -21,11 +23,19 @@ import {
   type Finding,
 } from '@/src/lib/dlp';
 import { DlpBanner } from '@/components/user/dlp-banner';
+import {
+  extractTextFromImage,
+  type OcrLanguage,
+  type OcrProgress,
+  LANGUAGE_LABELS,
+} from '@/lib/ocr/tesseract-client';
+import { extractTextFromPdf } from '@/lib/ocr/pdf-parser';
 
 const MAX_IMAGE_COUNT = 2;
 const MAX_TOTAL_BYTES = 3.5 * 1024 * 1024; // 3.5 MB
 const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_OPTIMIZE_INPUT_CHARS = 2000;
+const MAX_MESSAGE_CHARS = 60000;
 
 interface ChatInputProps {
   onSendMessage: (payload: {
@@ -64,6 +74,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [optimizationError, setOptimizationError] = useState<string | null>(null);
   const [previewOptimized, setPreviewOptimized] = useState<string | null>(null);
   const [undoOriginalInput, setUndoOriginalInput] = useState<string | null>(null);
+
+  // OCR states
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrPreviewText, setOcrPreviewText] = useState<string | null>(null);
+  const [ocrLanguage, setOcrLanguage] = useState<OcrLanguage>('eng');
+  const [ocrLangMenuOpen, setOcrLangMenuOpen] = useState(false);
+  const [showRawConfirm, setShowRawConfirm] = useState(false);
+  const ocrAbortControllerRef = useRef<AbortController | null>(null);
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+  const pdfFileInputRef = useRef<HTMLInputElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -191,13 +213,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleMaskAndSend = () => {
-    if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
+    if ((!input.trim() && selectedFiles.length === 0) || isLoading || isOcrProcessing) return;
     const { masked, map } = maskPrompt(input, findings, baseCounts);
     const filesToSend = [...selectedFiles];
     setInput('');
     clearAttachments();
     setPreviewOptimized(null);
     setUndoOriginalInput(null);
+    setShowRawConfirm(false);
     onSendMessage({ textToSend: masked, placeholderMap: map, files: filesToSend });
   };
 
@@ -207,28 +230,131 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if ((!input.trim() && selectedFiles.length === 0) || isLoading || input.length > 4000) return;
+  const handleRunOcr = async (fileToProcess?: File, langToUse?: OcrLanguage) => {
+    const file = fileToProcess || selectedFiles[0];
+    if (!file) return;
 
-      if (findings.length > 0) {
-        handleMaskAndSend();
+    const lang = langToUse || ocrLanguage;
+    setIsOcrProcessing(true);
+    setOcrError(null);
+    setOcrPreviewText(null);
+    setShowRawConfirm(false);
+    setOcrProgress({ status: `Initializing OCR (${LANGUAGE_LABELS[lang]})...`, progress: 5 });
+
+    const controller = new AbortController();
+    ocrAbortControllerRef.current = controller;
+
+    try {
+      const extracted = await extractTextFromImage(
+        file,
+        lang,
+        (p) => setOcrProgress(p),
+        controller.signal
+      );
+
+      if (!extracted || extracted.trim().length === 0) {
+        setOcrError('No readable text detected in this image. You can attach it as a raw image or try a clearer photo.');
       } else {
-        const text = input.trim();
-        const filesToSend = [...selectedFiles];
-        setInput('');
-        clearAttachments();
-        setPreviewOptimized(null);
-        setUndoOriginalInput(null);
-        onSendMessage({ textToSend: text, files: filesToSend });
+        setOcrPreviewText(extracted);
       }
+    } catch (err: any) {
+      if (err.message?.includes('cancelled')) {
+        // user cancelled
+      } else {
+        setOcrError(err.message || 'Failed to extract text from image.');
+      }
+    } finally {
+      setIsOcrProcessing(false);
+      setOcrProgress(null);
+      ocrAbortControllerRef.current = null;
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!input.trim() && selectedFiles.length === 0) || isLoading || input.length > 4000) return;
+  const handleCancelOcr = () => {
+    if (ocrAbortControllerRef.current) {
+      ocrAbortControllerRef.current.abort();
+    }
+    setIsOcrProcessing(false);
+    setOcrProgress(null);
+  };
+
+  const handleApplyOcrText = () => {
+    if (!ocrPreviewText) return;
+    const trimmed = ocrPreviewText.trim();
+    if (trimmed.length > MAX_MESSAGE_CHARS) {
+      setOcrError(`Extracted text exceeds the maximum character limit (${MAX_MESSAGE_CHARS.toLocaleString()} characters). Please trim before using.`);
+      return;
+    }
+
+    // Discard raw image attachments so raw image is NEVER sent to server/Gemini
+    clearAttachments();
+
+    // If input already has text, append; otherwise set
+    const combined = input.trim() ? `${input.trim()}\n\n---\n[Extracted Document Text]:\n${trimmed}` : trimmed;
+    setInput(combined);
+    onInputChange?.(combined);
+    setOcrPreviewText(null);
+    setOcrError(null);
+    setShowRawConfirm(false);
+  };
+
+  const handleDiscardOcr = () => {
+    setOcrPreviewText(null);
+    setOcrError(null);
+  };
+
+  const handlePdfSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (e.target) {
+      e.target.value = '';
+    }
+
+    setIsOcrProcessing(true);
+    setOcrError(null);
+    setOcrPreviewText(null);
+    setShowRawConfirm(false);
+    setOcrProgress({ status: 'Opening PDF document...', progress: 5 });
+
+    const controller = new AbortController();
+    ocrAbortControllerRef.current = controller;
+
+    try {
+      const res = await extractTextFromPdf(
+        file,
+        ocrLanguage,
+        (p) => setOcrProgress({ status: p.status, progress: p.progress }),
+        controller.signal
+      );
+
+      if (!res.text || res.text.trim().length === 0) {
+        setOcrError('No readable text or images found in this PDF.');
+      } else {
+        setOcrPreviewText(res.text);
+      }
+    } catch (err: any) {
+      if (err.message?.includes('cancelled')) {
+        // user cancelled
+      } else {
+        setOcrError(err.message || 'Failed to extract text from PDF.');
+      }
+    } finally {
+      setIsOcrProcessing(false);
+      setOcrProgress(null);
+      ocrAbortControllerRef.current = null;
+    }
+  };
+
+  const executeSend = (bypassRawCheck = false) => {
+    if ((!input.trim() && selectedFiles.length === 0) || isLoading || isOcrProcessing || input.length > MAX_MESSAGE_CHARS) return;
+
+    if (selectedFiles.length > 0 && !bypassRawCheck) {
+      setShowRawConfirm(true);
+      return;
+    }
+
+    setShowRawConfirm(false);
 
     if (findings.length > 0) {
       handleMaskAndSend();
@@ -241,6 +367,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setUndoOriginalInput(null);
       onSendMessage({ textToSend: text, files: filesToSend });
     }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      executeSend(false);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSend(false);
   };
 
   const handleOptimize = async () => {
@@ -302,7 +440,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setUndoOriginalInput(null);
   };
 
-  const canSend = (input.trim().length > 0 || selectedFiles.length > 0) && !isLoading && input.length <= 4000;
+  const canSend = (input.trim().length > 0 || selectedFiles.length > 0) && !isLoading && !isOcrProcessing && input.length <= MAX_MESSAGE_CHARS;
   const isOverOptimizeLimit = input.length > MAX_OPTIMIZE_INPUT_CHARS;
 
   return (
@@ -312,6 +450,158 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         <div className="p-3 rounded-2xl bg-red-950/40 border border-red-800/60 text-xs text-red-300 flex items-center space-x-2 animate-in fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
           <span>{errorMessage || fileValidationError || optimizationError}</span>
+        </div>
+      )}
+
+      {/* OCR Progress Banner with Cancel button */}
+      {isOcrProcessing && (
+        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-emerald-500/40 text-xs space-y-3 font-sans animate-in fade-in duration-150 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-emerald-300 font-medium">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-400 shrink-0" />
+              <span>{ocrProgress?.status || 'Reading image with OCR...'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelOcr}
+              className="px-3 py-1 rounded-full bg-[#383838] hover:bg-[#444] text-[#ececec] text-xs transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+          {/* Visual Progress Bar */}
+          <div className="w-full bg-[#1e1e1e] h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-emerald-500 h-full transition-all duration-200 ease-out"
+              style={{ width: `${Math.max(5, ocrProgress?.progress || 10)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* OCR Error Notice */}
+      {ocrError && !isOcrProcessing && (
+        <div className="p-4 rounded-2xl bg-red-950/40 border border-red-800/60 text-xs text-red-300 space-y-2.5 animate-in fade-in shadow-md">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+            <span className="font-medium">{ocrError}</span>
+          </div>
+          <div className="flex items-center space-x-2 pt-1 border-t border-red-900/40">
+            {selectedFiles.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setOcrError(null)}
+                className="px-3 py-1.5 rounded-full bg-[#2a2a2a] hover:bg-[#333] text-[#ececec] text-xs transition-colors cursor-pointer"
+              >
+                Keep as raw image
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDiscardOcr}
+              className="px-3 py-1.5 rounded-full bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs transition-colors cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* OCR Extracted Text Preview Card (Editable + Token Count) */}
+      {ocrPreviewText !== null && !isOcrProcessing && (
+        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-[#383838] text-xs space-y-3 shadow-lg animate-in fade-in duration-150">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-white font-medium">
+              <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Extracted Document Text</span>
+              <span className="text-[11px] text-[#9b9b9b] bg-[#333] px-2 py-0.5 rounded-full">
+                {LANGUAGE_LABELS[ocrLanguage]}
+              </span>
+            </div>
+            <span className="text-[11px] text-[#9b9b9b]">
+              ~{Math.max(1, Math.round(ocrPreviewText.length / (ocrLanguage === 'eng' ? 3.5 : 2.0))).toLocaleString()} tokens ({ocrPreviewText.length.toLocaleString()} chars)
+            </span>
+          </div>
+
+          <p className="text-[11px] text-[#9b9b9b]">
+            Review or edit before using. When accepted, the raw image is discarded and your text is protected by DLP Shield.
+          </p>
+
+          <textarea
+            rows={5}
+            value={ocrPreviewText}
+            onChange={(e) => setOcrPreviewText(e.target.value)}
+            className="w-full p-3.5 rounded-xl bg-[#212121] text-[#ececec] text-xs font-mono leading-relaxed outline-none focus:ring-1 focus:ring-emerald-500/50 resize-y max-h-72 scrollbar-thin scrollbar-thumb-zinc-800"
+          />
+
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#383838]">
+            <button
+              type="button"
+              onClick={handleApplyOcrText}
+              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Use extracted text</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setOcrPreviewText(null);
+                setOcrError(null);
+              }}
+              className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
+            >
+              Keep raw image instead
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDiscardOcr}
+              className="px-3 py-1.5 rounded-full bg-[#212121] hover:bg-[#282828] text-[#9b9b9b] text-xs transition-colors cursor-pointer"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Raw Image Fallback Confirmation Banner */}
+      {showRawConfirm && selectedFiles.length > 0 && (
+        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-amber-500/50 text-xs space-y-3 font-sans animate-in fade-in duration-150 shadow-lg">
+          <div className="flex items-center space-x-2 text-amber-300 font-medium">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Raw Image Privacy Warning</span>
+          </div>
+          <p className="text-zinc-300 text-xs leading-relaxed">
+            Sensitive data inside images (Aadhaar, PAN, cards, phone numbers) <strong className="text-white">cannot be detected or masked</strong> by DLP Shield. We recommend extracting text with local OCR so sensitive items are masked before leaving your device.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-800/30">
+            <button
+              type="button"
+              onClick={() => handleRunOcr()}
+              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Extract text with OCR (Recommended)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => executeSend(true)}
+              className="px-3 py-1.5 rounded-full bg-amber-600/30 hover:bg-amber-600/50 border border-amber-600/40 text-amber-200 text-xs transition-colors cursor-pointer"
+            >
+              Send raw image anyway
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowRawConfirm(false)}
+              className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -367,16 +657,27 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
 
-      {/* Image DLP Notice */}
-      {selectedFiles.length > 0 && (
-        <div className="px-4 py-2 rounded-2xl bg-[#2a2a2a] text-xs text-[#9b9b9b] flex items-center space-x-2 animate-in fade-in">
-          <span>
-            <strong className="text-[#ececec] font-medium">Notice:</strong> Sensitive data inside images cannot be detected or masked by DLP Shield.
-          </span>
+      {/* Image DLP Notice (when raw images attached and confirmation not active) */}
+      {selectedFiles.length > 0 && !showRawConfirm && (
+        <div className="px-4 py-2.5 rounded-2xl bg-[#2a2a2a] text-xs text-[#9b9b9b] flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center space-x-2">
+            <Shield className="w-3.5 h-3.5 text-[#9b9b9b] shrink-0" />
+            <span>
+              <strong className="text-[#ececec] font-medium">Notice:</strong> Sensitive data inside images cannot be masked by DLP Shield.
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={isOcrProcessing}
+            onClick={() => handleRunOcr()}
+            className="shrink-0 text-emerald-400 hover:text-emerald-300 font-medium underline cursor-pointer disabled:opacity-50"
+          >
+            Extract text with OCR
+          </button>
         </div>
       )}
 
-      {/* DLP Warning Banner (for typed text) */}
+      {/* DLP Warning Banner (for typed or extracted text) */}
       {findings.length > 0 && (
         <DlpBanner
           findings={findings}
@@ -391,35 +692,81 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         onSubmit={handleFormSubmit}
         className="relative rounded-3xl bg-[#303030] px-5 pt-4 pb-3 sm:px-6 sm:pt-4 sm:pb-3.5 shadow-md border border-transparent focus-within:border-[#4a4a4a] focus-within:bg-[#343434] transition-all"
       >
-        {/* Attached Image Thumbnails */}
+        {/* Attached Image Thumbnails with OCR buttons and language selector */}
         {selectedFiles.length > 0 && (
-          <div className="pb-2.5 flex flex-wrap gap-2">
+          <div className="pb-3 flex flex-wrap items-center gap-2">
             {selectedFiles.map((file, idx) => (
               <div
                 key={`${file.name}-${idx}`}
-                className="relative group rounded-xl overflow-hidden bg-[#212121] border border-[#424242]"
+                className="flex items-center space-x-2 bg-[#262626] border border-[#3e3e3e] rounded-xl p-1.5 pr-2.5"
               >
-                {previewUrls[idx] ? (
-                  <img
-                    src={previewUrls[idx]}
-                    alt={file.name}
-                    className="w-14 h-14 object-cover rounded-xl"
-                  />
-                ) : (
-                  <div className="w-14 h-14 flex items-center justify-center text-[10px] text-[#9b9b9b]">
-                    IMG
-                  </div>
-                )}
+                <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[#1e1e1e] shrink-0 border border-[#444]">
+                  {previewUrls[idx] ? (
+                    <img
+                      src={previewUrls[idx]}
+                      alt={file.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[9px] text-[#9b9b9b]">
+                      IMG
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col min-w-0 pr-1">
+                  <span className="text-xs text-[#ececec] font-medium truncate max-w-[120px]">
+                    {file.name}
+                  </span>
+                  <span className="text-[10px] text-[#9b9b9b]">
+                    {Math.round(file.size / 1024)} KB
+                  </span>
+                </div>
+
+                {/* Extract Text OCR button */}
+                <button
+                  type="button"
+                  disabled={isOcrProcessing}
+                  onClick={() => handleRunOcr(file)}
+                  className="px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium border border-emerald-500/40 flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
+                  title="Extract text with local OCR to protect sensitive data"
+                >
+                  <FileText className="w-3 h-3 text-emerald-400" />
+                  <span>OCR</span>
+                </button>
+
+                {/* Remove button */}
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(idx)}
-                  className="absolute top-1 right-1 p-0.5 rounded-full bg-black/70 hover:bg-black text-white transition-opacity"
-                  title="Remove image"
+                  className="p-1 rounded-full hover:bg-[#383838] text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
+                  title="Remove file"
                 >
-                  <X className="w-3 h-3" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
+
+            {/* OCR Language Selector Pill */}
+            <div className="flex items-center space-x-1 bg-[#252525] px-2 py-1 rounded-xl border border-[#383838] text-[11px] text-[#9b9b9b]">
+              <Languages className="w-3.5 h-3.5 text-[#9b9b9b]" />
+              <span>Lang:</span>
+              {(['eng', 'tam', 'hin'] as OcrLanguage[]).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setOcrLanguage(lang)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                    ocrLanguage === lang
+                      ? 'bg-emerald-500 text-zinc-950 font-semibold'
+                      : 'text-[#9b9b9b] hover:text-[#ececec]'
+                  }`}
+                  title={LANGUAGE_LABELS[lang]}
+                >
+                  {lang === 'eng' ? 'EN' : lang === 'tam' ? 'தமிழ்' : 'हिन्दी'}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -443,13 +790,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           className="chat-composer-textarea w-full bg-transparent text-[#ececec] text-base placeholder:text-[#9b9b9b] placeholder:text-base resize-none outline-none !outline-none focus:outline-none focus:!outline-none focus-visible:outline-none focus-visible:!outline-none ring-0 !ring-0 leading-relaxed min-h-[48px] max-h-48 scrollbar-thin scrollbar-thumb-zinc-700"
         />
 
-        {/* Hidden File Input */}
+        {/* Hidden Image File Input */}
         <input
           ref={fileInputRef}
           type="file"
           accept="image/png,image/jpeg,image/webp"
           multiple
           onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        {/* Hidden PDF File Input */}
+        <input
+          ref={pdfFileInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={handlePdfSelect}
           className="hidden"
         />
 
@@ -497,32 +853,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   </div>
                 </button>
 
-                <div
+                <button
+                  type="button"
                   role="menuitem"
-                  aria-disabled="true"
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-[#777777] cursor-not-allowed opacity-60"
+                  disabled={isOcrProcessing || isLoading}
+                  onClick={() => {
+                    setAttachMenuOpen(false);
+                    pdfFileInputRef.current?.click();
+                  }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-[#ececec] hover:bg-[#333333] transition-colors text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <div className="flex items-center space-x-2.5">
-                    <FileText className="w-4 h-4 text-[#666666] shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-medium">Add documents (OCR)</span>
-                      <span className="text-[11px] text-[#666666]">PDF, scanned docs</span>
-                    </div>
+                  <FileText className="w-4 h-4 text-[#9b9b9b] shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-medium">Add document (PDF)</span>
+                    <span className="text-[11px] text-[#9b9b9b]">Client-side OCR (up to 10 pages)</span>
                   </div>
-                  <span className="text-[10px] text-[#888888] bg-[#212121] px-1.5 py-0.5 rounded">
-                    Coming soon
-                  </span>
-                </div>
+                </button>
               </div>
             )}
           </div>
 
           {/* Right: Optimizer button + Character count + Send button */}
           <div className="flex items-center space-x-2">
-            {/* Long text character warning */}
-            {input.length > 1600 && (
-              <span className={`text-[11px] font-sans ${input.length > 4000 ? 'text-red-400' : 'text-[#9b9b9b]'}`}>
-                {input.length}/4000
+            {/* Long text character warning (raised to 60,000 for OCR / documents) */}
+            {input.length > 4000 && (
+              <span className={`text-[11px] font-sans ${input.length > MAX_MESSAGE_CHARS ? 'text-red-400' : 'text-[#9b9b9b]'}`}>
+                {input.length.toLocaleString()}/{MAX_MESSAGE_CHARS.toLocaleString()}
               </span>
             )}
 

@@ -12,6 +12,8 @@ import {
   Mail,
   Image as ImageIcon,
   Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -20,6 +22,7 @@ interface ChatThreadProps {
   isLoading: boolean;
   errorMessage?: string | null;
   wasMasked?: boolean;
+  historyTrimmed?: boolean;
   onSendMessage: (payload: {
     textToSend: string;
     placeholderMap?: Record<string, string>;
@@ -66,11 +69,76 @@ const PromptosThinkingState: React.FC<{ wasMasked?: boolean }> = ({ wasMasked })
   );
 };
 
+// Renders user message, collapsing long extracted document text into an expandable card
+const UserMessageBubble: React.FC<{ content: string }> = ({ content }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Check if content has extracted document text
+  const splitMarker = content.includes('---\n[Extracted Document Text]:')
+    ? '---\n[Extracted Document Text]:'
+    : content.includes('[Extracted Document Text]:')
+    ? '[Extracted Document Text]:'
+    : null;
+
+  if (!splitMarker) {
+    return (
+      <div className="max-w-[75%] rounded-3xl bg-[#303030] text-[#ececec] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words">
+        {content}
+      </div>
+    );
+  }
+
+  const parts = content.split(splitMarker);
+  const userPrompt = parts[0]?.trim();
+  const docText = parts[1]?.trim() || '';
+
+  return (
+    <div className="max-w-[75%] space-y-2">
+      {userPrompt && (
+        <div className="rounded-3xl bg-[#303030] text-[#ececec] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words">
+          {userPrompt}
+        </div>
+      )}
+
+      {/* Collapsed Document Card */}
+      <div className="rounded-2xl bg-[#2a2a2a] border border-[#3e3e3e] overflow-hidden text-xs shadow-xs">
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#323232] transition-colors cursor-pointer"
+        >
+          <div className="flex items-center space-x-2 text-[#ececec]">
+            <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="font-medium text-xs">
+              Extracted document text ({docText.length.toLocaleString()} characters)
+            </span>
+          </div>
+          <div className="flex items-center space-x-1 text-[#9b9b9b]">
+            <span className="text-[11px]">{isExpanded ? 'Hide' : 'Show'}</span>
+            {isExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div className="p-3.5 border-t border-[#383838] bg-[#212121] text-[#d4d4d4] font-mono text-[11px] leading-relaxed max-h-80 overflow-y-auto whitespace-pre-wrap break-words scrollbar-thin scrollbar-thumb-zinc-700">
+            {docText}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ChatThread: React.FC<ChatThreadProps> = ({
   messages,
   isLoading,
   errorMessage,
   wasMasked,
+  historyTrimmed = false,
   onSendMessage,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -197,17 +265,24 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
         <>
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6 scrollbar-thin scrollbar-thumb-zinc-700">
             <div className="max-w-3xl mx-auto space-y-6">
+              {/* History trimming notice */}
+              {historyTrimmed && (
+                <div className="flex justify-center select-none animate-in fade-in">
+                  <div className="px-3.5 py-1.5 rounded-full bg-[#2a2a2a] border border-[#3a3a3a] text-[11px] text-[#9b9b9b] flex items-center space-x-1.5 shadow-xs">
+                    <span>Earlier messages were omitted to fit within the AI context window.</span>
+                  </div>
+                </div>
+              )}
+
               {messages.map((msg, index) => {
                 const isUser = msg.role === 'user';
                 const msgKey = msg.id || `msg-${index}`;
 
                 if (isUser) {
-                  // User Message: Right-aligned rounded-3xl bubble, #303030, max width ~70%
+                  // User Message: Right-aligned with collapsible document card if OCR/PDF extracted text present
                   return (
                     <div key={msgKey} className="flex justify-end">
-                      <div className="max-w-[70%] rounded-3xl bg-[#303030] text-[#ececec] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {msg.content}
-                      </div>
+                      <UserMessageBubble content={msg.content} />
                     </div>
                   );
                 }

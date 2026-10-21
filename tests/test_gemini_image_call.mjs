@@ -12,7 +12,7 @@ if (!keyMatch || !keyMatch[1]) {
 }
 
 const apiKey = keyMatch[1].trim();
-const configuredModel = modelMatch ? modelMatch[1].trim() : 'gemini-2.0-flash';
+const configuredModel = modelMatch ? modelMatch[1].trim() : 'gemini-3.8-flash';
 console.log('Configured GEMINI_MODEL from .env.local:', configuredModel);
 
 const ai = new GoogleGenAI({ apiKey });

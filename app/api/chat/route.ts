@@ -12,7 +12,6 @@ import {
 } from '@/lib/attachments/config';
 import {
   validateImageFiles,
-  checkAttachmentRateLimit,
   type ValidatedImage,
 } from '@/lib/attachments/validate';
 
@@ -67,9 +66,9 @@ export async function POST(request: Request) {
     }
 
     const rawMessage = (rawMessageInput || '').trim();
-    if (rawMessage.length < 1 || rawMessage.length > 4000) {
+    if (rawMessage.length < 1 || rawMessage.length > 60000) {
       return NextResponse.json(
-        { error: 'Message must be between 1 and 4000 characters.' },
+        { error: 'Message must be between 1 and 60,000 characters.' },
         { status: 400 }
       );
     }
@@ -77,15 +76,6 @@ export async function POST(request: Request) {
     // Validate attachments if present
     let validatedImages: ValidatedImage[] = [];
     if (uploadedFiles.length > 0) {
-      // Check attachment rate limit (in-memory per-user sliding window)
-      const rateLimit = checkAttachmentRateLimit(user.id);
-      if (!rateLimit.allowed) {
-        return NextResponse.json(
-          { error: 'You are uploading attachments too quickly. Please wait a minute and try again.' },
-          { status: 429 }
-        );
-      }
-
       const valResult = await validateImageFiles(uploadedFiles);
       if (!valResult.valid) {
         return NextResponse.json(
@@ -225,22 +215,51 @@ export async function POST(request: Request) {
     }
     userParts.push({ text: safeUserMessage });
 
-    // Measure token count on prompt + attachments BEFORE invoking generateContent
+    // History Rule B: Unified token budget with dynamic trimming.
+    // Estimate tokens conservatively (chars / 3.5 for Indic/English mix + image budget).
+    const userEstimate = Math.ceil(safeUserMessage.length / 3.5) + (validatedImages.length * 260);
+    let trimmedHistory = [...history];
+    let droppedCount = 0;
+
+    const estimateHistoryTokens = (msgs: { content: string }[]) =>
+      msgs.reduce((sum, m) => sum + Math.ceil(m.content.length / 3.5), 0);
+
+    // Drop oldest history messages first if combined estimate exceeds MAX_INPUT_TOKENS
+    while (
+      trimmedHistory.length > 0 &&
+      userEstimate + estimateHistoryTokens(trimmedHistory) > MAX_INPUT_TOKENS
+    ) {
+      trimmedHistory.shift();
+      droppedCount++;
+    }
+
+    const historyTrimmed = droppedCount > 0;
+    if (historyTrimmed) {
+      console.log(`[History Trimmed] Omitted ${droppedCount} oldest messages to fit context budget.`);
+    }
+
+    // Assemble final request contents with trimmed history
+    const contents = trimmedHistory.map((msg) => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: prepareMessage(msg.content) }],
+    }));
+
+    contents.push({
+      role: 'user',
+      parts: userParts,
+    });
+
+    // Run exact countTokens on the FINAL assembled request (including history + attachments)
     try {
       const tokenCountResult = await ai.models.countTokens({
         model,
-        contents: [
-          {
-            role: 'user',
-            parts: userParts,
-          },
-        ],
+        contents,
       });
-      const promptTokens = tokenCountResult.totalTokens ?? 0;
-      if (promptTokens > MAX_INPUT_TOKENS) {
+      const totalTokens = tokenCountResult.totalTokens ?? 0;
+      if (totalTokens > MAX_INPUT_TOKENS) {
         return NextResponse.json(
           {
-            error: `This request is too large (about ${promptTokens} tokens, limit ${MAX_INPUT_TOKENS}). Try a shorter prompt or fewer images.`,
+            error: `This request is too large (about ${totalTokens.toLocaleString()} tokens, limit ${MAX_INPUT_TOKENS.toLocaleString()}). Please try a shorter prompt or attach a smaller document.`,
           },
           { status: 413 }
         );
@@ -248,18 +267,6 @@ export async function POST(request: Request) {
     } catch (tokenErr: any) {
       console.error('[Token Count Error]', tokenErr?.message);
     }
-
-    // Ensure Gemini receives ONLY masked text for history messages
-    const contents = history.map((msg) => ({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: prepareMessage(msg.content) }],
-    }));
-
-    // Append new message with attachments
-    contents.push({
-      role: 'user',
-      parts: userParts,
-    });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 45_000);
@@ -295,6 +302,17 @@ export async function POST(request: Request) {
         } catch (aiErr: any) {
           lastAiError = aiErr;
           const errMsg = aiErr?.message || '';
+          // Always log the real Gemini error (status + message) for server-side diagnosis
+          console.error('[Gemini SDK Error]', {
+            attempt,
+            status: aiErr?.status ?? aiErr?.httpStatusCode ?? 'unknown',
+            code: aiErr?.code ?? aiErr?.errorDetails?.[0]?.reason ?? 'unknown',
+            message: errMsg.slice(0, 500),
+          });
+          // Do NOT retry auth / config errors (401, 403, 400)
+          if (errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('API_KEY') || errMsg.includes('INVALID_ARGUMENT')) {
+            break;
+          }
           // If transient 503 / high demand spike, wait briefly and retry
           if (
             attempt < maxRetries &&
@@ -413,10 +431,12 @@ export async function POST(request: Request) {
       }
     }
 
-    // Return { conversationId, output } (restoring placeholders happens in browser only)
+    // Return { conversationId, output, historyTrimmed, droppedCount } (restoring placeholders happens in browser only)
     return NextResponse.json({
       conversationId,
       output: safeAssistantMessage,
+      historyTrimmed,
+      droppedCount,
     });
   } catch (err: any) {
     console.error('[Chat Handler Unexpected Error]', err?.message || 'Server error');

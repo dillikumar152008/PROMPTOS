@@ -12,6 +12,7 @@ export default function NewChatPage() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [wasLastMasked, setWasLastMasked] = useState(false);
+  const [historyTrimmed, setHistoryTrimmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // In-memory ref for client-side placeholder restoration across turns (never persisted)
@@ -85,6 +86,9 @@ export default function NewChatPage() {
       }
 
       const rawOutput = data?.output || '';
+      if (data?.historyTrimmed) {
+        setHistoryTrimmed(true);
+      }
 
       // Restore placeholders locally in the browser across all turns in this conversation
       const restoredOutput = restorePlaceholders(rawOutput, conversationMapRef.current);
@@ -120,6 +124,7 @@ export default function NewChatPage() {
       isLoading={isLoading}
       errorMessage={errorMessage}
       wasMasked={wasLastMasked}
+      historyTrimmed={historyTrimmed}
       onSendMessage={handleSendMessage}
     />
   );

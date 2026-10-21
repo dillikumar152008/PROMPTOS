@@ -207,7 +207,7 @@ function createTestEnvironment(options = {}) {
 
   const moduleObj = { exports: {} };
   const fn = new Function('require', 'module', 'exports', 'process', transpiled);
-  process.env.GEMINI_MODEL = 'gemini-1.5-flash';
+  process.env.GEMINI_MODEL = 'gemini-3.8-flash';
   process.env.GEMINI_API_KEY = 'mock_gemini_api_key';
   fn(customRequire, moduleObj, moduleObj.exports, process);
 

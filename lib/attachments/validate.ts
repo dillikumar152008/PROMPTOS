@@ -3,8 +3,6 @@ import {
   MAX_TOTAL_ATTACHMENT_BYTES,
   MAX_SINGLE_IMAGE_BYTES,
   ALLOWED_IMAGE_MIMES,
-  ATTACHMENT_RATE_LIMIT_WINDOW_MS,
-  MAX_ATTACHMENT_REQUESTS_PER_MINUTE,
 } from './config';
 import { prepareMessage } from '@/lib/chat/prepare';
 
@@ -136,23 +134,4 @@ export async function validateImageFiles(files: File[]): Promise<ImageValidation
     valid: true,
     images: validatedImages,
   };
-}
-
-// In-memory sliding window rate limiter for attachments:
-// Best-effort across ephemeral serverless instances
-const attachmentTimestamps = new Map<string, number[]>();
-
-export function checkAttachmentRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const timestamps = attachmentTimestamps.get(userId) || [];
-  const validTimestamps = timestamps.filter((t) => now - t < ATTACHMENT_RATE_LIMIT_WINDOW_MS);
-
-  if (validTimestamps.length >= MAX_ATTACHMENT_REQUESTS_PER_MINUTE) {
-    attachmentTimestamps.set(userId, validTimestamps);
-    return { allowed: false, remaining: 0 };
-  }
-
-  validTimestamps.push(now);
-  attachmentTimestamps.set(userId, validTimestamps);
-  return { allowed: true, remaining: MAX_ATTACHMENT_REQUESTS_PER_MINUTE - validTimestamps.length };
 }
