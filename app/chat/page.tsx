@@ -11,6 +11,8 @@ export default function NewChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [wasLastMasked, setWasLastMasked] = useState(false);
+  const [historyTrimmed, setHistoryTrimmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // In-memory ref for client-side placeholder restoration across turns (never persisted)
@@ -19,19 +21,28 @@ export default function NewChatPage() {
   const handleSendMessage = async ({
     textToSend,
     placeholderMap,
+    files,
   }: {
     textToSend: string;
     placeholderMap?: Record<string, string>;
+    files?: File[];
   }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setWasLastMasked(Boolean(placeholderMap && Object.keys(placeholderMap).length > 0));
+
+    let displayContent = textToSend;
+    if (files && files.length > 0) {
+      const meta = files.map((f) => `[Image: ${f.name} (${Math.round(f.size / 1024)} KB)]`).join('\n');
+      displayContent = textToSend ? `${meta}\n\n${textToSend}` : meta;
+    }
 
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
       conversation_id: activeConvId || '',
       user_id: '',
       role: 'user',
-      content: textToSend,
+      content: displayContent,
       created_at: new Date().toISOString(),
     };
 
@@ -45,14 +56,28 @@ export default function NewChatPage() {
     }
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(activeConvId ? { conversationId: activeConvId } : {}),
-          message: textToSend,
-        }),
-      });
+      let res: Response;
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append('message', textToSend || 'Please analyze this image.');
+        if (activeConvId) formData.append('conversationId', activeConvId);
+        for (const file of files) {
+          formData.append('images', file);
+        }
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(activeConvId ? { conversationId: activeConvId } : {}),
+            message: textToSend,
+          }),
+        });
+      }
 
       const data = await res.json().catch(() => null);
 
@@ -61,6 +86,9 @@ export default function NewChatPage() {
       }
 
       const rawOutput = data?.output || '';
+      if (data?.historyTrimmed) {
+        setHistoryTrimmed(true);
+      }
 
       // Restore placeholders locally in the browser across all turns in this conversation
       const restoredOutput = restorePlaceholders(rawOutput, conversationMapRef.current);
@@ -95,6 +123,8 @@ export default function NewChatPage() {
       messages={messages}
       isLoading={isLoading}
       errorMessage={errorMessage}
+      wasMasked={wasLastMasked}
+      historyTrimmed={historyTrimmed}
       onSendMessage={handleSendMessage}
     />
   );

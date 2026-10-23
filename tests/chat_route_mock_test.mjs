@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { prepareMessage, extractMaxIndices } from '../lib/chat/prepare.js';
+import { validateImageFiles, checkAttachmentRateLimit } from '../lib/attachments/validate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,7 +78,16 @@ function createTestEnvironment(options = {}) {
     constructor(opts) {
       this.apiKey = opts.apiKey;
       this.models = {
+        countTokens: async (args) => {
+          if (options.simulateOverTokens) {
+            return { totalTokens: 20000 };
+          }
+          return { totalTokens: 150 };
+        },
         generateContent: async (args) => {
+          if (options.simulateGemini429) {
+            throw new Error('429 RESOURCE_EXHAUSTED: Quota exceeded for model');
+          }
           capturedGeminiPayload = args;
           return { text: geminiReply };
         },
@@ -174,6 +184,21 @@ function createTestEnvironment(options = {}) {
     if (id === '@/lib/chat/prepare') {
       return { prepareMessage, extractMaxIndices };
     }
+    if (id === '@/lib/attachments/config') {
+      return {
+        MAX_INPUT_TOKENS: 15000,
+        MAX_HISTORY_MESSAGES: 10,
+        MAX_OUTPUT_TOKENS_WITH_ATTACHMENT: 2048,
+        MAX_IMAGE_COUNT: 2,
+        MAX_TOTAL_ATTACHMENT_BYTES: 3.5 * 1024 * 1024,
+      };
+    }
+    if (id === '@/lib/attachments/validate') {
+      return {
+        validateImageFiles,
+        checkAttachmentRateLimit,
+      };
+    }
     if (id === '@/src/lib/dlp') {
       return { extractMaxIndices };
     }
@@ -182,7 +207,7 @@ function createTestEnvironment(options = {}) {
 
   const moduleObj = { exports: {} };
   const fn = new Function('require', 'module', 'exports', 'process', transpiled);
-  process.env.GEMINI_MODEL = 'gemini-1.5-flash';
+  process.env.GEMINI_MODEL = 'gemini-3.8-flash';
   process.env.GEMINI_API_KEY = 'mock_gemini_api_key';
   fn(customRequire, moduleObj, moduleObj.exports, process);
 
@@ -308,6 +333,64 @@ async function runMockTestSuite() {
   };
   const res6 = await test6Env.POST(req6);
   assert(res6.status === 401, 'Unauthenticated visitor returns 401 Unauthorized');
+
+  // TEST CASE 7: Multipart upload with valid image and sensitive prompt
+  console.log('\n[TEST 7] Testing multipart upload with valid image and sensitive prompt...');
+  const test7Env = createTestEnvironment();
+  const validPngBuf = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const mockPngFile = {
+    name: 'user_doc.png',
+    size: validPngBuf.length,
+    type: 'image/png',
+    arrayBuffer: async () => validPngBuf.buffer.slice(validPngBuf.byteOffset, validPngBuf.byteOffset + validPngBuf.byteLength),
+  };
+  const req7 = {
+    headers: { 'content-type': 'multipart/form-data; boundary=----WebKitFormBoundary' },
+    formData: async () => ({
+      get: (key) => {
+        if (key === 'message') return 'Analyze this receipt: Aadhaar is 2345 6789 0124';
+        return null;
+      },
+      getAll: (key) => {
+        if (key === 'images') return [mockPngFile];
+        return [];
+      },
+    }),
+  };
+  const res7 = await test7Env.POST(req7);
+  assert(res7.status === 200, 'Multipart request with image returns 200 OK');
+  const geminiPayload7 = test7Env.getCapturedGemini();
+  assert(!JSON.stringify(geminiPayload7).includes('2345 6789 0124'), 'Gemini payload has NO raw Aadhaar');
+  assert(JSON.stringify(geminiPayload7).includes('[AADHAAR_1]'), 'Gemini payload has [AADHAAR_1] placeholder');
+  assert(JSON.stringify(geminiPayload7).includes('inlineData'), 'Gemini payload contains inlineData part for image');
+  assert(JSON.stringify(geminiPayload7).includes('image/png'), 'Gemini payload specifies image/png MIME');
+  const inserts7 = test7Env.getCapturedInserts();
+  const insertedUserMsg = inserts7.find((m) => m.data.role === 'user');
+  assert(insertedUserMsg && insertedUserMsg.data.content.includes('[Attachment: user_doc.png'), 'Supabase user message has attachment metadata header');
+  assert(insertedUserMsg && !insertedUserMsg.data.content.includes('2345 6789 0124'), 'Supabase user message has NO raw Aadhaar');
+  assert(insertedUserMsg && !insertedUserMsg.data.content.includes('data:image'), 'Supabase user message has NO raw image/binary data');
+
+  // TEST CASE 8: Over-token budget rejection (413)
+  console.log('\n[TEST 8] Testing over-token budget rejection (413)...');
+  const test8Env = createTestEnvironment({ simulateOverTokens: true });
+  const req8 = {
+    json: async () => ({ message: 'Testing very large token budget prompt' }),
+  };
+  const res8 = await test8Env.POST(req8);
+  assert(res8.status === 413, 'Over-budget request returns 413 status');
+  const res8Body = await res8.json();
+  assert(res8Body.error.includes('too large'), 'Over-budget error message is clear and friendly');
+
+  // TEST CASE 9: Simulated Gemini 429 quota error handled gracefully
+  console.log('\n[TEST 9] Testing simulated Gemini 429 quota error...');
+  const test9Env = createTestEnvironment({ simulateGemini429: true });
+  const req9 = {
+    json: async () => ({ message: 'Testing quota error handling' }),
+  };
+  const res9 = await test9Env.POST(req9);
+  assert(res9.status === 429, 'Gemini quota error maps to 429 status');
+  const res9Body = await res9.json();
+  assert(res9Body.error.includes('The AI is busy, please try again in a minute.'), 'Friendly user-facing error returned instead of raw error');
 
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passedTests}/${totalTests} tests passed (${failedTests} failed)`);

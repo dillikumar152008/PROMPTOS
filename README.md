@@ -255,14 +255,15 @@ node tests/server_side_dlp_bypass_test.mjs  # raw input sent straight to the API
 
 ---
 
-## 🗺️ Roadmap
+##  🗺️ Roadmap
 
-- [ ] Structured prompt optimization (role, task, constraints and output format)
-- [ ] Predictive model routing, so simple requests use a smaller model
-- [ ] Remove the disabled legacy creator code
-- [ ] Add a verified database schema file for easier setup
+- [ ] **Phase 0 — DLP Shield Audit:** Audit existing detectors, regex patterns, benchmark results, placeholder generation/restoration, client/server masking differences, and potential data-leak paths. Report findings and await approval before modifying code.
+- [ ] **Phase 1 — Detection Core:** Implement Unicode and evasion normalization, checksum-validated identifiers, additional PII and secret detectors, context-based confidence tiers, ReDoS-safe patterns, and adversarial performance tests.
+- [ ] **Phase 2 — Synthetic Dataset & Benchmarking:** Build a labelled synthetic dataset with valid, malformed, partial, multilingual, lookalike, and adversarial cases. Measure precision, recall, and false-positive rates per category and overall, compare against the Phase 0 baseline, and enforce configurable thresholds.
+- [ ] **Phase 3 — Integrity & Privacy Hardening:** Harden placeholder integrity, test client/server masking consistency, implement fail-closed behaviour, and audit logs, error responses, database rows, and analytics for sensitive-data leakage.
+- [ ] **Phase 4 — User Controls & Privacy Policies:** Add medium-confidence review controls, Strict and Balanced policies enforced server-side, privacy receipts containing counts and status flags only, and explicit handling of uninspected attachments.
+- [ ] **Phase 5 — Image Redaction (Approval Required):** Use Tesseract OCR word bounding boxes to redact detected sensitive text on the image canvas before any raw-image transmission. Report protection only for text actually inspected and redacted.
 
----
 
 ## 📄 License
 

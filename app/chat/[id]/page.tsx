@@ -13,6 +13,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [wasLastMasked, setWasLastMasked] = useState(false);
+  const [historyTrimmed, setHistoryTrimmed] = useState(false);
   const [isFetchingHistory, setIsFetchingHistory] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -63,19 +65,28 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const handleSendMessage = async ({
     textToSend,
     placeholderMap,
+    files,
   }: {
     textToSend: string;
     placeholderMap?: Record<string, string>;
+    files?: File[];
   }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setWasLastMasked(Boolean(placeholderMap && Object.keys(placeholderMap).length > 0));
+
+    let displayContent = textToSend;
+    if (files && files.length > 0) {
+      const meta = files.map((f) => `[Image: ${f.name} (${Math.round(f.size / 1024)} KB)]`).join('\n');
+      displayContent = textToSend ? `${meta}\n\n${textToSend}` : meta;
+    }
 
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
       conversation_id: conversationId,
       user_id: '',
       role: 'user',
-      content: textToSend,
+      content: displayContent,
       created_at: new Date().toISOString(),
     };
 
@@ -89,14 +100,28 @@ export default function ConversationPage({ params }: { params: { id: string } })
     }
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversationId,
-          message: textToSend,
-        }),
-      });
+      let res: Response;
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append('message', textToSend || 'Please analyze this image.');
+        formData.append('conversationId', conversationId);
+        for (const file of files) {
+          formData.append('images', file);
+        }
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId,
+            message: textToSend,
+          }),
+        });
+      }
 
       const data = await res.json().catch(() => null);
 
@@ -105,6 +130,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
       }
 
       const rawOutput = data?.output || '';
+      if (data?.historyTrimmed) {
+        setHistoryTrimmed(true);
+      }
 
       // Restore placeholders locally in the browser across all turns in this conversation
       const restoredOutput = restorePlaceholders(rawOutput, conversationMapRef.current);
@@ -128,7 +156,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
   if (isFetchingHistory) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#09090b] text-zinc-500 font-mono text-xs">
+      <div className="flex-1 flex items-center justify-center bg-[#212121] text-[#9b9b9b] font-sans text-xs">
         Loading conversation...
       </div>
     );
@@ -139,6 +167,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
       messages={messages}
       isLoading={isLoading}
       errorMessage={errorMessage}
+      wasMasked={wasLastMasked}
+      historyTrimmed={historyTrimmed}
       onSendMessage={handleSendMessage}
     />
   );

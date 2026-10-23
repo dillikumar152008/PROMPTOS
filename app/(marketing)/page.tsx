@@ -3,31 +3,42 @@ import { MarketingNavbar } from '@/components/marketing/navbar';
 import { MarketingHero } from '@/components/marketing/hero';
 import { MarketingFeaturesGrid } from '@/components/marketing/features-grid';
 import { MarketingHowItWorks } from '@/components/marketing/how-it-works';
+import { MarketingPrivacySection } from '@/components/marketing/privacy-section';
 import { MarketingPricing } from '@/components/marketing/pricing';
 import { MarketingFooter } from '@/components/marketing/footer';
+import { DlpScanBackground } from '@/components/marketing/dlp-scan-background';
 
 export default function MarketingPage() {
   return (
-    <div className="min-h-screen bg-[#09090b] text-[#fafafa] flex flex-col">
-      {/* 1. Sticky Top Nav */}
-      <MarketingNavbar />
+    <div className="relative min-h-screen bg-[#09090b] text-[#fafafa] flex flex-col selection:bg-zinc-800 selection:text-white">
+      {/* 1. Global Viewport DLP Scan Canvas (Fixed across entire landing page) */}
+      <DlpScanBackground />
 
-      <main className="flex-1">
-        {/* 2. Hero with tight-tracking and interactive product mock */}
-        <MarketingHero />
+      {/* 2. Page Content Column (z-10, relative above background) */}
+      <div className="relative z-10 flex-1 flex flex-col">
+        {/* Sticky Top Nav */}
+        <MarketingNavbar />
 
-        {/* 3. Features grid with 6 compact intent-wired cells */}
-        <MarketingFeaturesGrid />
+        <main className="flex-1">
+          {/* Hero section */}
+          <MarketingHero />
 
-        {/* 4. How it works (3 numbered steps) */}
-        <MarketingHowItWorks />
+          {/* Features grid */}
+          <MarketingFeaturesGrid />
 
-        {/* 5. Pricing (3 plain tiers with 1px borders) */}
-        <MarketingPricing />
-      </main>
+          {/* How it works */}
+          <MarketingHowItWorks />
 
-      {/* 6. Final CTA band and minimal footer */}
-      <MarketingFooter />
+          {/* Privacy by design statements */}
+          <MarketingPrivacySection />
+
+          {/* Beta pricing */}
+          <MarketingPricing />
+        </main>
+
+        {/* Minimal footer */}
+        <MarketingFooter />
+      </div>
     </div>
   );
 }

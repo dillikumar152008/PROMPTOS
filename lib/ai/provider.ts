@@ -164,7 +164,7 @@ export async function executeModelPrompt({
       throw new UserFacingAIError('No model is configured.', 500);
     }
 
-    const primaryModel = modelOverride || process.env.AI_MODEL_RUN || process.env.AI_MODEL_GENERATE || 'gemini-3.5-flash';
+    const primaryModel = modelOverride || process.env.AI_MODEL_RUN || process.env.AI_MODEL_GENERATE || 'gemini-2.0-flash';
     const fallbackModel = process.env.AI_MODEL_FALLBACK?.trim();
 
     const payload = {

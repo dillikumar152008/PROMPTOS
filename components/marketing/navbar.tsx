@@ -8,7 +8,7 @@ export const MarketingNavbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-zinc-800 bg-[#09090b]">
+    <header className="sticky top-0 z-50 w-full border-b border-zinc-800 bg-[#09090b]/80 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         
         {/* Brand Wordmark */}
@@ -39,13 +39,8 @@ export const MarketingNavbar: React.FC = () => {
         {/* Right Auth CTAs */}
         <div className="hidden sm:flex items-center space-x-2">
           <a href="/login" tabIndex={-1}>
-            <Button variant="ghost" size="sm">
-              Log in
-            </Button>
-          </a>
-          <a href="/signup" tabIndex={-1}>
             <Button variant="solid" size="sm">
-              Get started
+              Log in
             </Button>
           </a>
         </div>
@@ -88,13 +83,8 @@ export const MarketingNavbar: React.FC = () => {
           </a>
           <div className="pt-3 border-t border-zinc-800 flex flex-col gap-2">
             <a href="/login" className="w-full">
-              <Button variant="secondary" size="md" className="w-full">
-                Log in
-              </Button>
-            </a>
-            <a href="/signup" className="w-full">
               <Button variant="solid" size="md" className="w-full">
-                Get started
+                Log in
               </Button>
             </a>
           </div>

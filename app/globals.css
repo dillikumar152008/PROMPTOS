@@ -35,6 +35,14 @@
     outline-offset: 2px !important;
   }
 
+  /* Exclude chat composer textarea from the blue focus rectangle */
+  textarea.chat-composer-textarea:focus-visible,
+  textarea.chat-composer-textarea:focus {
+    outline: none !important;
+    outline-offset: 0 !important;
+    box-shadow: none !important;
+  }
+
   /* Respect reduced motion preferences */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -85,3 +93,41 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }
+
+/* PromptOS Thinking Shimmer Animation */
+@keyframes thinkingShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-thinking-shimmer {
+  background: linear-gradient(90deg, #9b9b9b 0%, #ececec 50%, #9b9b9b 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinkingShimmer 2s ease-in-out infinite;
+}
+
+@keyframes promptosSinglePulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-promptos-single-pulse {
+  animation: promptosSinglePulse 0.45s ease-out 1;
+}
+
