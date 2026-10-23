@@ -43,13 +43,42 @@ The project started as a platform where creators built AI mini-apps. It has sinc
 
 | | Feature | Details |
 |---|---|---|
-| 🛡️ | **DLP Shield** | Detects Aadhaar, PAN, Indian mobile numbers, payment cards and API keys while you type |
-| ⚠️ | **Warning banner** | Shows what was found, for example "Sensitive data found: Aadhaar x1, Phone x1", with **Mask and send** and **Edit** actions |
-| 🔁 | **Local restoration** | Placeholders in the reply are swapped back to real values in the browser only |
-| 🧱 | **Server-side safety net** | `/api/chat` masks every message again, so requests that bypass the interface are still protected |
-| 💬 | **Chat history** | Conversations and messages stored in Supabase, with a sidebar of recent chats |
-| 🔑 | **Authentication** | Supabase Auth with cookie sessions and row-level security |
-| 🌐 | **Indic digit support** | Tamil and Hindi numerals are normalized before checksum validation |
+| 🛡️ | **DLP Shield** | Detects Aadhaar, PAN, Indian mobile numbers, payment cards, and API keys using pattern matching and validation. |
+| ⚠️ | **Warning Banner** | Displays detected sensitive-data categories and provides **Mask and send** and **Edit** actions. |
+| 🔐 | **Client-Side Masking** | Replaces sensitive values with typed placeholders before chat requests are transmitted to the server. |
+| 🔄 | **Local Restoration** | Restores original values from placeholders in the browser using an in-memory mapping. |
+| 🧱 | **Server-Side Safety Net** | Independently masks incoming messages and conversation history in `/api/chat`, adding protection against client-side bypasses. |
+| 🧠 | **Prompt Optimizer** | Supports prompt optimization focused on clearer instructions, roles, constraints, and structured output. |
+| 📎 | **Image Attachments** | Supports image-attachment functionality for richer AI interactions. |
+| 📄 | **PDF & Image OCR** | Extracts text from supported PDFs and images using OCR with fallback handling. |
+| 💬 | **AI Chat** | Integrates Google Gemini for conversational AI responses. |
+| 🗂️ | **Chat History** | Stores conversations and messages in Supabase and provides a sidebar for recent chats. |
+| 🔑 | **Authentication** | Uses Supabase Auth, cookie-based sessions, and PostgreSQL Row-Level Security. |
+| 🌐 | **Indic Digit Support** | Normalizes Tamil and Hindi numerals before applicable checksum validation. |
+| 🧪 | **Security Testing** | Includes synthetic-data tests for detection, checksums, masking, multi-turn numbering, concurrent restoration, and server-side bypass scenarios. |
+| ☁️ | **Cloud Deployment** | Supports deployment through Vercel with Supabase and server-side Gemini configuration. |
+
+## 🗺️ Roadmap
+
+- [x] **Privacy-First AI Chat** — Integrate Google Gemini with the PromptOS chat interface.
+- [x] **Client-Side DLP Shield** — Detect and mask supported sensitive information before transmission.
+- [x] **Server-Side Protection** — Apply independent masking to incoming messages and conversation history.
+- [x] **Secure Placeholder Restoration** — Restore masked values locally using conversation-scoped, in-memory mappings.
+- [x] **Checksum Validation** — Validate supported Aadhaar and payment-card numbers using Verhoeff and Luhn algorithms.
+- [x] **Indic Numeral Normalization** — Support Tamil and Hindi numerals in applicable detection workflows.
+- [x] **Secure Conversation Management** — Integrate Supabase authentication, PostgreSQL storage, and Row-Level Security.
+- [x] **Automated DLP Tests** — Test core detection, masking, restoration, and selected server-side security scenarios.
+- [x] **Prompt Optimization Development** — Add prompt-optimization functionality to the project.
+- [x] **OCR-Based Text Extraction** — Implement PDF/image OCR functionality with fallback handling on the feature branch.
+- [x] **OCR Privacy Integration** — Integrate extracted-text handling with the DLP workflow where implemented.
+- [ ] **End-to-End Feature Validation** — Verify prompt optimization, attachments, and OCR across complete user workflows.
+- [ ] **Advanced DLP Detection** — Expand sensitive-data coverage and improve precision and recall.
+- [ ] **Multimodal Privacy Protection** — Strengthen sensitive-data checks for extracted text and supported attachments.
+- [ ] **Database Automation** — Add a version-controlled Supabase schema and RLS setup instructions.
+- [ ] **Security Hardening** — Expand adversarial testing, false-positive analysis, and privacy validation.
+- [ ] **Production Readiness** — Improve error handling, deployment verification, and privacy-safe operational monitoring.
+- [ ] **Codebase Optimization** — Remove disabled legacy creator functionality and simplify the project structure.
+- [ ] **Documentation & Reproducibility** — Improve setup instructions, architecture documentation, and testing procedures.
 
 ---
 
