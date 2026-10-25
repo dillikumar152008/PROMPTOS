@@ -20,55 +20,40 @@ export const DlpBanner: React.FC<DlpBannerProps> = ({
   if (!findings || findings.length === 0) return null;
 
   const summary = summarize(findings);
-  const summaryText = `Sensitive data found: ${summary
-    .map((s) => `${s.label} x${s.count}`)
-    .join(', ')}`;
+  const countText = summary.map((s) => `${s.label} (${s.count})`).join(', ');
 
   return (
-    <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-amber-500/50 text-xs space-y-3 font-sans animate-in fade-in duration-150">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center space-x-2 text-amber-300 font-medium">
-          <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
-          <span className="font-medium">{summaryText}</span>
+    <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 px-3.5 py-3 text-xs animate-in fade-in duration-150">
+      <div className="flex items-start justify-between gap-3">
+        {/* Left: icon + summary */}
+        <div className="flex items-start gap-2 min-w-0">
+          <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <span className="text-amber-200 font-medium">Sensitive data detected — </span>
+            <span className="text-amber-300/80">{countText}</span>
+          </div>
         </div>
-        <span className="text-[11px] font-sans font-medium text-amber-400/90 bg-amber-950/40 border border-amber-700/50 px-2 py-0.5 rounded-full">
-          DLP Shield Active
-        </span>
-      </div>
 
-      {/* Detected values highlights */}
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {findings.map((f, i) => (
-          <span
-            key={`${f.type}-${f.start}-${i}`}
-            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-950/40 border border-amber-600/40 text-amber-200 text-xs"
+        {/* Right: actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onEdit}
+            className="text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer disabled:opacity-40 text-xs"
           >
-            <span className="text-amber-400/90 font-medium">{LABELS[f.type] || f.type}:</span>
-            <span className="underline decoration-amber-500/50">{f.value}</span>
-          </span>
-        ))}
-      </div>
-
-      {/* Action buttons: Mask and send + Edit only */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-800/30">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onMaskAndSend}
-          className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
-        >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Mask and send</span>
-        </button>
-
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onEdit}
-          className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
-        >
-          Edit
-        </button>
+            Edit
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onMaskAndSend}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition-colors cursor-pointer disabled:opacity-40"
+          >
+            <ShieldCheck className="w-3 h-3" />
+            Mask &amp; send
+          </button>
+        </div>
       </div>
     </div>
   );

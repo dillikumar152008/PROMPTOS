@@ -30,37 +30,24 @@ interface ChatThreadProps {
   }) => void;
 }
 
-// B1-B12: PromptOS is thinking state with subtle text shimmer and honest DLP masking line
-const PromptosThinkingState: React.FC<{ wasMasked?: boolean }> = ({ wasMasked }) => {
+// ── Thinking indicator ──────────────────────────────────────────────────────
+const ThinkingIndicator: React.FC<{ wasMasked?: boolean }> = ({ wasMasked }) => {
   const [isStillWorking, setIsStillWorking] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsStillWorking(true);
-    }, 15000);
+    const timer = setTimeout(() => setIsStillWorking(true), 15000);
     return () => clearTimeout(timer);
   }, []);
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-start gap-3.5 justify-start w-full"
-    >
-      {/* 28px static logo avatar (no pulsing, no motion) */}
-      <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-zinc-200 shrink-0 mt-0.5 select-none">
-        &gt;_
-      </div>
-
-      <div className="flex flex-col space-y-1 py-1">
-        {/* Main thinking text with subtle gray shimmer (motion-reduced fallback to static text) */}
-        <span className="text-sm font-normal text-[#9b9b9b] animate-thinking-shimmer motion-reduce:animate-none motion-reduce:bg-none motion-reduce:text-[#9b9b9b]">
-          {isStillWorking ? 'Still working…' : 'PromptOS is thinking'}
+    <div role="status" aria-live="polite" className="flex items-start gap-3 w-full">
+      <Avatar />
+      <div className="pt-0.5 space-y-1">
+        <span className="text-sm text-[#9b9b9b] animate-thinking-shimmer motion-reduce:animate-none motion-reduce:text-[#9b9b9b]">
+          {isStillWorking ? 'Still working…' : 'Thinking…'}
         </span>
-
-        {/* Real DLP masking line: only when masking actually occurred */}
         {wasMasked && (
-          <span className="text-xs text-[#777777] font-normal">
+          <span className="block text-xs text-[#9b9b9b]">
             Sensitive data was masked before sending
           </span>
         )}
@@ -69,11 +56,17 @@ const PromptosThinkingState: React.FC<{ wasMasked?: boolean }> = ({ wasMasked })
   );
 };
 
-// Renders user message, collapsing long extracted document text into an expandable card
-const UserMessageBubble: React.FC<{ content: string }> = ({ content }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+// ── Small PromptOS avatar ───────────────────────────────────────────────────
+const Avatar: React.FC = () => (
+  <div className="w-6 h-6 rounded-md bg-[#2a2a2a] border border-[#383838] flex items-center justify-center font-mono font-bold text-[10px] text-[#9b9b9b] shrink-0 mt-0.5 select-none">
+    &gt;_
+  </div>
+);
 
-  // Check if content has extracted document text
+// ── User message bubble — collapses extracted document text ─────────────────
+const UserBubble: React.FC<{ content: string }> = ({ content }) => {
+  const [expanded, setExpanded] = useState(false);
+
   const splitMarker = content.includes('---\n[Extracted Document Text]:')
     ? '---\n[Extracted Document Text]:'
     : content.includes('[Extracted Document Text]:')
@@ -82,7 +75,7 @@ const UserMessageBubble: React.FC<{ content: string }> = ({ content }) => {
 
   if (!splitMarker) {
     return (
-      <div className="max-w-[75%] rounded-3xl bg-[#303030] text-[#ececec] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words">
+      <div className="max-w-[78%] rounded-2xl bg-[#2f2f2f] text-[#ececec] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
         {content}
       </div>
     );
@@ -93,38 +86,32 @@ const UserMessageBubble: React.FC<{ content: string }> = ({ content }) => {
   const docText = parts[1]?.trim() || '';
 
   return (
-    <div className="max-w-[75%] space-y-2">
+    <div className="max-w-[78%] space-y-1.5">
       {userPrompt && (
-        <div className="rounded-3xl bg-[#303030] text-[#ececec] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words">
+        <div className="rounded-2xl bg-[#2f2f2f] text-[#ececec] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
           {userPrompt}
         </div>
       )}
 
-      {/* Collapsed Document Card */}
-      <div className="rounded-2xl bg-[#2a2a2a] border border-[#3e3e3e] overflow-hidden text-xs shadow-xs">
+      {/* Collapsible document card */}
+      <div className="rounded-xl border border-[#333] bg-[#252525] text-xs overflow-hidden">
         <button
           type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#323232] transition-colors cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+          className="w-full px-3.5 py-2 flex items-center justify-between text-left hover:bg-[#2e2e2e] transition-colors cursor-pointer"
         >
-          <div className="flex items-center space-x-2 text-[#ececec]">
-            <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="font-medium text-xs">
-              Extracted document text ({docText.length.toLocaleString()} characters)
-            </span>
+          <div className="flex items-center gap-2 text-[#9b9b9b]">
+            <FileText className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span>Extracted document — {docText.length.toLocaleString()} chars</span>
           </div>
-          <div className="flex items-center space-x-1 text-[#9b9b9b]">
-            <span className="text-[11px]">{isExpanded ? 'Hide' : 'Show'}</span>
-            {isExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
+          <div className="flex items-center gap-1 text-[#555]">
+            <span>{expanded ? 'Hide' : 'Show'}</span>
+            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </div>
         </button>
 
-        {isExpanded && (
-          <div className="p-3.5 border-t border-[#383838] bg-[#212121] text-[#d4d4d4] font-mono text-[11px] leading-relaxed max-h-80 overflow-y-auto whitespace-pre-wrap break-words scrollbar-thin scrollbar-thumb-zinc-700">
+        {expanded && (
+          <div className="px-3.5 py-3 border-t border-[#333] bg-[#1e1e1e] text-[#c4c4c4] font-mono text-[11px] leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap break-words scrollbar-thin scrollbar-thumb-zinc-700">
             {docText}
           </div>
         )}
@@ -133,6 +120,7 @@ const UserMessageBubble: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
+// ── Main thread ─────────────────────────────────────────────────────────────
 export const ChatThread: React.FC<ChatThreadProps> = ({
   messages,
   isLoading,
@@ -147,19 +135,11 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
   const [greeting, setGreeting] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Set greeting based on local time
   useEffect(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) {
-      setGreeting('Good morning');
-    } else if (hour < 18) {
-      setGreeting('Good afternoon');
-    } else {
-      setGreeting('Good evening');
-    }
+    const h = new Date().getHours();
+    setGreeting(h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening');
   }, []);
 
-  // Auto-scroll to newest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
@@ -180,97 +160,81 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
   const isEmpty = messages.length === 0;
 
-  // A5: 6 suggestion pills in 2 rows
-  const emptyPillsRow1 = [
-    { label: 'Summarize text', text: 'Summarize this text in 5 bullet points:\n\n', icon: FileText },
-    { label: 'Explain code', text: 'Explain what this code does and check for potential bugs:\n\n', icon: Code },
-    { label: 'Brainstorm ideas', text: 'Brainstorm 10 creative project ideas for ', icon: Lightbulb },
-  ];
-
-  const emptyPillsRow2 = [
-    { label: 'Draft an email', text: 'Draft a clear and professional email about ', icon: Mail },
-    { label: 'Analyze an image', isAttach: true, icon: ImageIcon },
-    { label: 'Improve my prompt', text: 'Improve this prompt: ', icon: Sparkles },
+  const suggestions = [
+    { label: 'Optimize a prompt',    text: 'Optimize this prompt:\n\n',                             icon: Sparkles  },
+    { label: 'Summarize document',   text: 'Summarize this in 5 key points:\n\n',                   icon: FileText  },
+    { label: 'Explain code',         text: 'Explain what this code does and check for bugs:\n\n',   icon: Code      },
+    { label: 'Analyze an image',     isAttach: true,                                                icon: ImageIcon },
+    { label: 'Draft a message',      text: 'Draft a professional message about ',                   icon: Mail      },
+    { label: 'Brainstorm ideas',     text: 'Give me 10 ideas for ',                                 icon: Lightbulb },
   ];
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#212121] text-[#ececec] font-sans">
       {isEmpty ? (
-        // Empty State: ChatGPT-style centered greeting + heading + composer + 6 pills in 2 rows
-        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-3xl mx-auto w-full space-y-6">
-          <div className="flex flex-col items-center space-y-1.5 text-center">
-            {greeting && (
-              <span className="text-xs text-[#9b9b9b] font-medium tracking-wide">
-                {greeting}
-              </span>
-            )}
-            <h1 className="font-sans text-2xl sm:text-[30px] font-semibold tracking-tight text-[#ececec]">
-              What&apos;s on your mind today?
-            </h1>
-          </div>
+        /* ── Empty state ── */
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+          {/* Central composition — restrained width */}
+          <div className="w-full max-w-xl mx-auto flex flex-col items-center">
 
-          {/* Centered Composer */}
-          <div className="w-full">
-            <ChatInput
-              onSendMessage={onSendMessage}
-              isLoading={isLoading}
-              errorMessage={errorMessage}
-              existingMessages={messages}
-              prefillValue={prefillPrompt}
-              triggerAttach={triggerAttach}
-            />
-          </div>
+            {/* Heading block */}
+            <div className="text-center mb-8">
+              {greeting && (
+                <p className="text-xs text-[#9b9b9b] mb-2 select-none tracking-wide">{greeting}</p>
+              )}
+              <h1 className="text-3xl font-semibold text-[#ececec] tracking-tight leading-tight">
+                What are we working on?
+              </h1>
+              <p className="mt-2.5 text-sm text-[#9b9b9b] leading-relaxed">
+                Optimize prompts, work with documents, and explore ideas securely.
+              </p>
+            </div>
 
-          {/* 6 Suggestion Pills in 2 rows (Disappear once conversation starts) */}
-          <div className="flex flex-col items-center gap-2.5 pt-1 w-full select-none">
-            {/* Row 1 */}
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {emptyPillsRow1.map((pill, idx) => {
-                const Icon = pill.icon;
+            {/* Composer — compact, naturally sized */}
+            <div className="w-full">
+              <ChatInput
+                onSendMessage={onSendMessage}
+                isLoading={isLoading}
+                errorMessage={errorMessage}
+                existingMessages={messages}
+                prefillValue={prefillPrompt}
+                triggerAttach={triggerAttach}
+              />
+            </div>
+
+            {/* Suggestion chips — compact inline pills, not large cards */}
+            <div className="mt-4 flex flex-wrap justify-center gap-2 select-none">
+              {suggestions.map((s, i) => {
+                const Icon = s.icon;
                 return (
                   <button
-                    key={idx}
+                    key={i}
                     type="button"
-                    onClick={() => handleSelectPill(pill)}
-                    className="px-4 py-2 rounded-full text-xs sm:text-sm text-[#ececec] bg-[#2a2a2a] hover:bg-[#333333] transition-colors cursor-pointer flex items-center space-x-2"
+                    onClick={() => handleSelectPill(s)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-[#c4c4c4] bg-[#2a2a2a] hover:bg-[#333333] border border-[#383838] hover:border-[#4a4a4a] hover:text-[#ececec] transition-colors cursor-pointer"
                   >
-                    <Icon className="w-3.5 h-3.5 text-[#9b9b9b] shrink-0" />
-                    <span>{pill.label}</span>
+                    <Icon className="w-3 h-3 shrink-0 text-[#9b9b9b]" />
+                    <span>{s.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Row 2 */}
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {emptyPillsRow2.map((pill, idx) => {
-                const Icon = pill.icon;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectPill(pill)}
-                    className="px-4 py-2 rounded-full text-xs sm:text-sm text-[#ececec] bg-[#2a2a2a] hover:bg-[#333333] transition-colors cursor-pointer flex items-center space-x-2"
-                  >
-                    <Icon className="w-3.5 h-3.5 text-[#9b9b9b] shrink-0" />
-                    <span>{pill.label}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       ) : (
-        // Active Chat Thread
+        /* ── Active thread ── */
         <>
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6 scrollbar-thin scrollbar-thumb-zinc-700">
+          {/* Message list */}
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6 scrollbar-thin scrollbar-thumb-zinc-800">
             <div className="max-w-3xl mx-auto space-y-6">
-              {/* History trimming notice */}
+
+              {/* Context trimmed notice */}
               {historyTrimmed && (
                 <div className="flex justify-center select-none animate-in fade-in">
-                  <div className="px-3.5 py-1.5 rounded-full bg-[#2a2a2a] border border-[#3a3a3a] text-[11px] text-[#9b9b9b] flex items-center space-x-1.5 shadow-xs">
-                    <span>Earlier messages were omitted to fit within the AI context window.</span>
-                  </div>
+                  <span className="text-[11px] text-[#9b9b9b] border border-[#383838] rounded-full px-3 py-1">
+                    Earlier messages were trimmed to fit the context window.
+                  </span>
                 </div>
               )}
 
@@ -279,23 +243,19 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                 const msgKey = msg.id || `msg-${index}`;
 
                 if (isUser) {
-                  // User Message: Right-aligned with collapsible document card if OCR/PDF extracted text present
                   return (
                     <div key={msgKey} className="flex justify-end">
-                      <UserMessageBubble content={msg.content} />
+                      <UserBubble content={msg.content} />
                     </div>
                   );
                 }
 
-                // Assistant Message: No bubble, no border, plain text on page background with small logo avatar
+                // Assistant message — no bubble, just text with small avatar
                 return (
-                  <div key={msgKey} className="flex items-start gap-3.5 justify-start w-full group">
-                    <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-zinc-200 shrink-0 mt-0.5 select-none">
-                      &gt;_
-                    </div>
-
+                  <div key={msgKey} className="flex items-start gap-3 group w-full">
+                    <Avatar />
                     <div className="flex-1 min-w-0 space-y-2">
-                      <div className="prose prose-invert max-w-none text-sm font-sans leading-relaxed break-words text-[#ececec]">
+                      <div className="prose prose-invert max-w-none text-sm font-sans leading-relaxed break-words text-[#e0e0e0]">
                         <ReactMarkdown
                           components={{
                             a: ({ node, ...props }) => (
@@ -303,7 +263,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                                 {...props}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-blue-400 underline hover:text-blue-300 font-medium"
+                                className="text-blue-400 hover:text-blue-300 underline"
                               />
                             ),
                           }}
@@ -312,23 +272,23 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                         </ReactMarkdown>
                       </div>
 
-                      {/* Assistant Message Actions: Copy Button (Muted, hover on desktop, visible on mobile) */}
-                      <div className="pt-1 flex items-center justify-start opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* Copy button — visible on hover */}
+                      <div className="flex items-center opacity-0 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => handleCopy(msgKey, msg.content)}
-                          className="flex items-center space-x-1.5 px-2 py-1 rounded-md text-xs text-[#9b9b9b] hover:text-[#ececec] hover:bg-[#2a2a2a] transition-colors cursor-pointer"
-                          title="Copy message"
+                          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-[#777] hover:text-[#c4c4c4] hover:bg-[#2a2a2a] transition-colors cursor-pointer"
+                          title="Copy"
                         >
                           {copiedId === msgKey ? (
                             <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span className="text-emerald-400 text-xs">Copied</span>
+                              <Check className="w-3 h-3 text-emerald-500" />
+                              <span className="text-emerald-500">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span className="text-xs">Copy</span>
+                              <Copy className="w-3 h-3" />
+                              <span>Copy</span>
                             </>
                           )}
                         </button>
@@ -338,15 +298,15 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                 );
               })}
 
-              {/* B1-B12: PromptOS is thinking state in assistant column */}
-              {isLoading && <PromptosThinkingState wasMasked={wasMasked} />}
+              {/* Thinking indicator */}
+              {isLoading && <ThinkingIndicator wasMasked={wasMasked} />}
 
               <div ref={messagesEndRef} />
             </div>
           </div>
 
-          {/* Bottom Pinned Composer Bar with Fade-in Background */}
-          <div className="bg-gradient-to-t from-[#212121] via-[#212121]/95 to-transparent p-4 sm:p-5 shrink-0">
+          {/* Pinned composer */}
+          <div className="bg-gradient-to-t from-[#212121] via-[#212121]/90 to-transparent pt-2 pb-4 px-4 sm:px-6 shrink-0">
             <ChatInput
               onSendMessage={onSendMessage}
               isLoading={isLoading}

@@ -26,13 +26,9 @@ const config: Config = {
         },
       },
       borderRadius: {
-        DEFAULT: '0.375rem',
-        sm: '0.25rem',
-        md: '0.375rem',
-        lg: '0.375rem', // Cap border-radius at rounded-md
-        xl: '0.375rem', // Cap border-radius at rounded-md
-        '2xl': '0.375rem', // Cap border-radius at rounded-md
-        '3xl': '0.375rem', // Cap border-radius at rounded-md
+        '2xl': '1rem',
+        '3xl': '1.5rem',
+        full: '9999px',
       },
       fontFamily: {
         sans: ['var(--font-geist-sans)', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],

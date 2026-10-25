@@ -164,14 +164,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     setFileValidationError(null);
 
-    // 1. Check max count
     if (selectedFiles.length + files.length > MAX_IMAGE_COUNT) {
       setFileValidationError(`You can attach up to ${MAX_IMAGE_COUNT} images per prompt.`);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
-    // 2. Validate types
     const invalidType = files.find((f) => !ALLOWED_MIMES.includes(f.type));
     if (invalidType) {
       setFileValidationError(`Unsupported file type (${invalidType.type}). Only PNG, JPG, and WEBP are accepted.`);
@@ -179,7 +177,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    // 3. Validate total size
     const currentTotal = selectedFiles.reduce((acc, f) => acc + f.size, 0);
     const newTotal = files.reduce((acc, f) => acc + f.size, 0);
     if (currentTotal + newTotal > MAX_TOTAL_BYTES) {
@@ -188,7 +185,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    // Append files and generate local preview URLs
     const newUrls = files.map((f) => URL.createObjectURL(f));
     setSelectedFiles((prev) => [...prev, ...files]);
     setPreviewUrls((prev) => [...prev, ...newUrls]);
@@ -286,10 +282,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    // Discard raw image attachments so raw image is NEVER sent to server/Gemini
     clearAttachments();
 
-    // If input already has text, append; otherwise set
     const combined = input.trim() ? `${input.trim()}\n\n---\n[Extracted Document Text]:\n${trimmed}` : trimmed;
     setInput(combined);
     onInputChange?.(combined);
@@ -444,33 +438,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const isOverOptimizeLimit = input.length > MAX_OPTIMIZE_INPUT_CHARS;
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-2.5 font-sans">
-      {/* Visible Error Banner */}
+    <div className="w-full max-w-3xl mx-auto space-y-2 font-sans">
+
+      {/* ── Error banner ── */}
       {(errorMessage || fileValidationError || optimizationError) && (
-        <div className="p-3 rounded-2xl bg-red-950/40 border border-red-800/60 text-xs text-red-300 flex items-center space-x-2 animate-in fade-in">
-          <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-950/30 border border-red-800/40 text-xs text-red-300 animate-in fade-in">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
           <span>{errorMessage || fileValidationError || optimizationError}</span>
         </div>
       )}
 
-      {/* OCR Progress Banner with Cancel button */}
+      {/* ── OCR / PDF progress ── */}
       {isOcrProcessing && (
-        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-emerald-500/40 text-xs space-y-3 font-sans animate-in fade-in duration-150 shadow-lg">
+        <div className="px-3.5 py-3 rounded-lg bg-[#262626] border border-[#333] text-xs space-y-2.5 animate-in fade-in duration-150">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-emerald-300 font-medium">
-              <Loader2 className="w-4 h-4 animate-spin text-emerald-400 shrink-0" />
-              <span>{ocrProgress?.status || 'Reading image with OCR...'}</span>
+            <div className="flex items-center gap-2 text-[#d4d4d4]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500 shrink-0" />
+              <span>{ocrProgress?.status || 'Reading with OCR…'}</span>
             </div>
             <button
               type="button"
               onClick={handleCancelOcr}
-              className="px-3 py-1 rounded-full bg-[#383838] hover:bg-[#444] text-[#ececec] text-xs transition-colors cursor-pointer"
+              className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
             >
               Cancel
             </button>
           </div>
-          {/* Visual Progress Bar */}
-          <div className="w-full bg-[#1e1e1e] h-1.5 rounded-full overflow-hidden">
+          <div className="w-full bg-[#1a1a1a] h-1 rounded-full overflow-hidden">
             <div
               className="bg-emerald-500 h-full transition-all duration-200 ease-out"
               style={{ width: `${Math.max(5, ocrProgress?.progress || 10)}%` }}
@@ -479,19 +473,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
 
-      {/* OCR Error Notice */}
+      {/* ── OCR error ── */}
       {ocrError && !isOcrProcessing && (
-        <div className="p-4 rounded-2xl bg-red-950/40 border border-red-800/60 text-xs text-red-300 space-y-2.5 animate-in fade-in shadow-md">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-            <span className="font-medium">{ocrError}</span>
+        <div className="px-3.5 py-3 rounded-lg bg-red-950/25 border border-red-800/35 text-xs text-red-300 space-y-2.5 animate-in fade-in">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400 mt-0.5" />
+            <span>{ocrError}</span>
           </div>
-          <div className="flex items-center space-x-2 pt-1 border-t border-red-900/40">
+          <div className="flex items-center gap-2 pt-1 border-t border-red-900/30">
             {selectedFiles.length > 0 && (
               <button
                 type="button"
                 onClick={() => setOcrError(null)}
-                className="px-3 py-1.5 rounded-full bg-[#2a2a2a] hover:bg-[#333] text-[#ececec] text-xs transition-colors cursor-pointer"
+                className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
               >
                 Keep as raw image
               </button>
@@ -499,7 +493,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="button"
               onClick={handleDiscardOcr}
-              className="px-3 py-1.5 rounded-full bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs transition-colors cursor-pointer"
+              className="text-xs text-red-400 hover:text-red-300 transition-colors cursor-pointer"
             >
               Dismiss
             </button>
@@ -507,177 +501,164 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
 
-      {/* OCR Extracted Text Preview Card (Editable + Token Count) */}
+      {/* ── Extracted text preview ── */}
       {ocrPreviewText !== null && !isOcrProcessing && (
-        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-[#383838] text-xs space-y-3 shadow-lg animate-in fade-in duration-150">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-white font-medium">
-              <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Extracted Document Text</span>
-              <span className="text-[11px] text-[#9b9b9b] bg-[#333] px-2 py-0.5 rounded-full">
+        <div className="rounded-lg border border-[#333] bg-[#252525] text-xs animate-in fade-in duration-150 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#333]">
+            <div className="flex items-center gap-2 text-[#d4d4d4]">
+              <FileText className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="font-medium">Extracted text</span>
+              <span className="text-[#9b9b9b] bg-[#1e1e1e] px-1.5 py-0.5 rounded text-[10px]">
                 {LANGUAGE_LABELS[ocrLanguage]}
               </span>
             </div>
             <span className="text-[11px] text-[#9b9b9b]">
-              ~{Math.max(1, Math.round(ocrPreviewText.length / (ocrLanguage === 'eng' ? 3.5 : 2.0))).toLocaleString()} tokens ({ocrPreviewText.length.toLocaleString()} chars)
+              ~{Math.max(1, Math.round(ocrPreviewText.length / (ocrLanguage === 'eng' ? 3.5 : 2.0))).toLocaleString()} tokens
             </span>
           </div>
 
-          <p className="text-[11px] text-[#9b9b9b]">
-            Review or edit before using. When accepted, the raw image is discarded and your text is protected by DLP Shield.
-          </p>
-
+          {/* Editable text area */}
           <textarea
             rows={5}
             value={ocrPreviewText}
             onChange={(e) => setOcrPreviewText(e.target.value)}
-            className="w-full p-3.5 rounded-xl bg-[#212121] text-[#ececec] text-xs font-mono leading-relaxed outline-none focus:ring-1 focus:ring-emerald-500/50 resize-y max-h-72 scrollbar-thin scrollbar-thumb-zinc-800"
+            className="w-full px-3.5 py-3 bg-[#1e1e1e] text-[#d4d4d4] text-xs font-mono leading-relaxed outline-none resize-y max-h-64 scrollbar-thin scrollbar-thumb-zinc-700"
           />
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#383838]">
+          {/* Actions */}
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-t border-[#333]">
+            <p className="text-[11px] text-[#9b9b9b] flex-1">Review or edit before using. Image is discarded; text is DLP-scanned.</p>
             <button
               type="button"
-              onClick={handleApplyOcrText}
-              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+              onClick={handleDiscardOcr}
+              className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>Use extracted text</span>
+              Discard
             </button>
-
             <button
               type="button"
               onClick={() => {
                 setOcrPreviewText(null);
                 setOcrError(null);
               }}
-              className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
+              className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
             >
-              Keep raw image instead
+              Keep raw image
             </button>
-
             <button
               type="button"
-              onClick={handleDiscardOcr}
-              className="px-3 py-1.5 rounded-full bg-[#212121] hover:bg-[#282828] text-[#9b9b9b] text-xs transition-colors cursor-pointer"
+              onClick={handleApplyOcrText}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition-colors cursor-pointer"
             >
-              Discard
+              <Check className="w-3 h-3" />
+              Use text
             </button>
           </div>
         </div>
       )}
 
-      {/* Raw Image Fallback Confirmation Banner */}
+      {/* ── Raw image privacy warning ── */}
       {showRawConfirm && selectedFiles.length > 0 && (
-        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-amber-500/50 text-xs space-y-3 font-sans animate-in fade-in duration-150 shadow-lg">
-          <div className="flex items-center space-x-2 text-amber-300 font-medium">
-            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Raw Image Privacy Warning</span>
+        <div className="px-3.5 py-3 rounded-lg border border-amber-500/30 bg-amber-950/15 text-xs animate-in fade-in duration-150">
+          <div className="flex items-start gap-2 mb-2.5">
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[#c4c4c4] leading-relaxed">
+              Images can't be scanned by DLP Shield. Sensitive data in the image won't be masked.
+              <button
+                type="button"
+                onClick={() => handleRunOcr()}
+                className="ml-1 text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+              >
+                Extract text with OCR instead
+              </button>
+            </p>
           </div>
-          <p className="text-zinc-300 text-xs leading-relaxed">
-            Sensitive data inside images (Aadhaar, PAN, cards, phone numbers) <strong className="text-white">cannot be detected or masked</strong> by DLP Shield. We recommend extracting text with local OCR so sensitive items are masked before leaving your device.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-800/30">
-            <button
-              type="button"
-              onClick={() => handleRunOcr()}
-              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Extract text with OCR (Recommended)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => executeSend(true)}
-              className="px-3 py-1.5 rounded-full bg-amber-600/30 hover:bg-amber-600/50 border border-amber-600/40 text-amber-200 text-xs transition-colors cursor-pointer"
-            >
-              Send raw image anyway
-            </button>
-
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setShowRawConfirm(false)}
-              className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
+              className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => executeSend(true)}
+              className="text-xs text-amber-300 hover:text-amber-200 transition-colors cursor-pointer"
+            >
+              Send raw image anyway
             </button>
           </div>
         </div>
       )}
 
-      {/* Undo Banner if user applied optimization */}
+      {/* ── Undo optimization banner ── */}
       {undoOriginalInput && (
-        <div className="px-4 py-2 rounded-2xl bg-[#2a2a2a] text-xs text-[#ececec] flex items-center justify-between animate-in fade-in">
-          <span>Prompt updated with structured version.</span>
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#252525] text-xs text-[#9b9b9b] animate-in fade-in">
+          <span>Prompt updated.</span>
           <button
             type="button"
             onClick={handleUndoOptimization}
-            className="text-emerald-400 hover:text-emerald-300 text-xs underline cursor-pointer font-medium"
+            className="text-emerald-400 hover:text-emerald-300 text-xs cursor-pointer"
           >
             Undo
           </button>
         </div>
       )}
 
-      {/* Optimization Preview Card */}
+      {/* ── Optimized prompt preview ── */}
       {previewOptimized && (
-        <div className="p-4 rounded-2xl bg-[#2a2a2a] border border-[#383838] text-xs space-y-3 shadow-lg animate-in fade-in duration-150">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-white font-medium">
-              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Optimized Prompt Preview</span>
+        <div className="rounded-lg border border-[#333] bg-[#252525] text-xs animate-in fade-in duration-150 overflow-hidden">
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#333]">
+            <div className="flex items-center gap-2 text-[#d4d4d4]">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="font-medium">Optimized prompt</span>
             </div>
-            <span className="text-[11px] text-[#9b9b9b] bg-[#303030] px-2.5 py-0.5 rounded-full">
-              Ready to review
-            </span>
+            <span className="text-[11px] text-[#9b9b9b]">Review before sending</span>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#212121] text-[#ececec] text-xs whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800">
+          <div className="px-3.5 py-3 text-[#d4d4d4] whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700 bg-[#1e1e1e]">
             {previewOptimized}
           </div>
 
-          <div className="flex items-center space-x-2 pt-1 border-t border-[#383838]">
-            <button
-              type="button"
-              onClick={handleApplyOptimization}
-              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-medium text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Use this</span>
-            </button>
-
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-t border-[#333]">
             <button
               type="button"
               onClick={() => setPreviewOptimized(null)}
-              className="px-3 py-1.5 rounded-full bg-[#303030] hover:bg-[#383838] text-[#ececec] text-xs transition-colors cursor-pointer"
+              className="text-xs text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
             >
               Keep mine
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyOptimization}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition-colors cursor-pointer"
+            >
+              <Check className="w-3 h-3" />
+              Use this
             </button>
           </div>
         </div>
       )}
 
-      {/* Image DLP Notice (when raw images attached and confirmation not active) */}
+      {/* ── Image DLP notice ── */}
       {selectedFiles.length > 0 && !showRawConfirm && (
-        <div className="px-4 py-2.5 rounded-2xl bg-[#2a2a2a] text-xs text-[#9b9b9b] flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center space-x-2">
-            <Shield className="w-3.5 h-3.5 text-[#9b9b9b] shrink-0" />
-            <span>
-              <strong className="text-[#ececec] font-medium">Notice:</strong> Sensitive data inside images cannot be masked by DLP Shield.
-            </span>
-          </div>
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#252525] text-xs text-[#9b9b9b] animate-in fade-in">
+          <Shield className="w-3 h-3 shrink-0" />
+          <span>Images are not scanned by DLP Shield.</span>
           <button
             type="button"
             disabled={isOcrProcessing}
             onClick={() => handleRunOcr()}
-            className="shrink-0 text-emerald-400 hover:text-emerald-300 font-medium underline cursor-pointer disabled:opacity-50"
+            className="ml-auto text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer disabled:opacity-40 shrink-0"
           >
-            Extract text with OCR
+            Extract text
           </button>
         </div>
       )}
 
-      {/* DLP Warning Banner (for typed or extracted text) */}
+      {/* ── DLP text-findings banner ── */}
       {findings.length > 0 && (
         <DlpBanner
           findings={findings}
@@ -687,20 +668,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         />
       )}
 
-      {/* ChatGPT-style Composer Container (rounded-3xl, #303030, no blue focus rectangle) */}
+      {/* ── Composer ── */}
       <form
         onSubmit={handleFormSubmit}
-        className="relative rounded-3xl bg-[#303030] px-5 pt-4 pb-3 sm:px-6 sm:pt-4 sm:pb-3.5 shadow-md border border-transparent focus-within:border-[#4a4a4a] focus-within:bg-[#343434] transition-all"
+        className="relative rounded-2xl bg-[#2f2f2f] border border-transparent focus-within:border-[#555] transition-colors"
       >
-        {/* Attached Image Thumbnails with OCR buttons and language selector */}
+        {/* Attached image thumbnails + language selector */}
         {selectedFiles.length > 0 && (
-          <div className="pb-3 flex flex-wrap items-center gap-2">
+          <div className="px-4 pt-3 pb-0 flex flex-wrap items-center gap-2">
             {selectedFiles.map((file, idx) => (
               <div
                 key={`${file.name}-${idx}`}
-                className="flex items-center space-x-2 bg-[#262626] border border-[#3e3e3e] rounded-xl p-1.5 pr-2.5"
+                className="flex items-center gap-2 bg-[#232323] border border-[#383838] rounded-lg p-1.5 pr-2"
               >
-                <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[#1e1e1e] shrink-0 border border-[#444]">
+                {/* Thumbnail */}
+                <div className="w-8 h-8 rounded overflow-hidden bg-[#1a1a1a] shrink-0">
                   {previewUrls[idx] ? (
                     <img
                       src={previewUrls[idx]}
@@ -708,57 +690,51 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[9px] text-[#9b9b9b]">
-                      IMG
-                    </div>
+                    <div className="w-full h-full flex items-center justify-center text-[8px] text-[#666]">IMG</div>
                   )}
                 </div>
 
-                <div className="flex flex-col min-w-0 pr-1">
-                  <span className="text-xs text-[#ececec] font-medium truncate max-w-[120px]">
-                    {file.name}
-                  </span>
-                  <span className="text-[10px] text-[#9b9b9b]">
-                    {Math.round(file.size / 1024)} KB
-                  </span>
+                {/* File info */}
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-[#d4d4d4] truncate max-w-[100px]">{file.name}</span>
+                  <span className="text-[10px] text-[#9b9b9b]">{Math.round(file.size / 1024)} KB</span>
                 </div>
 
-                {/* Extract Text OCR button */}
+                {/* OCR button */}
                 <button
                   type="button"
                   disabled={isOcrProcessing}
                   onClick={() => handleRunOcr(file)}
-                  className="px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium border border-emerald-500/40 flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
-                  title="Extract text with local OCR to protect sensitive data"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors cursor-pointer disabled:opacity-40"
+                  title="Extract text with OCR"
                 >
-                  <FileText className="w-3 h-3 text-emerald-400" />
-                  <span>OCR</span>
+                  <FileText className="w-3 h-3" />
+                  OCR
                 </button>
 
-                {/* Remove button */}
+                {/* Remove */}
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(idx)}
-                  className="p-1 rounded-full hover:bg-[#383838] text-[#9b9b9b] hover:text-[#ececec] transition-colors cursor-pointer"
-                  title="Remove file"
+                  className="p-0.5 text-[#666] hover:text-[#9b9b9b] transition-colors cursor-pointer"
+                  title="Remove"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
 
-            {/* OCR Language Selector Pill */}
-            <div className="flex items-center space-x-1 bg-[#252525] px-2 py-1 rounded-xl border border-[#383838] text-[11px] text-[#9b9b9b]">
-              <Languages className="w-3.5 h-3.5 text-[#9b9b9b]" />
-              <span>Lang:</span>
+            {/* Language selector */}
+            <div className="flex items-center gap-1 text-[11px] text-[#9b9b9b]">
+              <Languages className="w-3 h-3" />
               {(['eng', 'tam', 'hin'] as OcrLanguage[]).map((lang) => (
                 <button
                   key={lang}
                   type="button"
                   onClick={() => setOcrLanguage(lang)}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                  className={`px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
                     ocrLanguage === lang
-                      ? 'bg-emerald-500 text-zinc-950 font-semibold'
+                      ? 'bg-emerald-600 text-white'
                       : 'text-[#9b9b9b] hover:text-[#ececec]'
                   }`}
                   title={LANGUAGE_LABELS[lang]}
@@ -770,7 +746,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         )}
 
-        {/* Textarea (taller min-height, 16px placeholder, no blue outline) */}
+        {/* Textarea */}
         <textarea
           ref={textareaRef}
           rows={2}
@@ -784,13 +760,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           disabled={isLoading}
           placeholder={
             selectedFiles.length > 0
-              ? 'Ask a question about the attached image...'
-              : 'Message PromptOS...'
+              ? 'Ask a question about the attached image…'
+              : 'Message PromptOS…'
           }
-          className="chat-composer-textarea w-full bg-transparent text-[#ececec] text-base placeholder:text-[#9b9b9b] placeholder:text-base resize-none outline-none !outline-none focus:outline-none focus:!outline-none focus-visible:outline-none focus-visible:!outline-none ring-0 !ring-0 leading-relaxed min-h-[48px] max-h-48 scrollbar-thin scrollbar-thumb-zinc-700"
+          className="chat-composer-textarea w-full px-4 pt-3.5 pb-2 bg-transparent text-[#ececec] text-sm placeholder:text-[#9b9b9b] resize-none outline-none ring-0 leading-relaxed min-h-[52px] max-h-48 scrollbar-thin scrollbar-thumb-zinc-700"
         />
 
-        {/* Hidden Image File Input */}
+        {/* Hidden file inputs */}
         <input
           ref={fileInputRef}
           type="file"
@@ -799,8 +775,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onChange={handleFileSelect}
           className="hidden"
         />
-
-        {/* Hidden PDF File Input */}
         <input
           ref={pdfFileInputRef}
           type="file"
@@ -809,17 +783,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           className="hidden"
         />
 
-        {/* Bottom Bar inside Composer */}
-        <div className="flex items-center justify-between pt-1">
-          {/* Left: Attach button with popover */}
-          <div className="relative flex items-center space-x-2" ref={attachMenuRef}>
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
+          {/* Left: attach popover */}
+          <div className="relative" ref={attachMenuRef}>
             <button
               type="button"
               disabled={isLoading || selectedFiles.length >= MAX_IMAGE_COUNT}
               onClick={() => setAttachMenuOpen((prev) => !prev)}
-              className={`p-2 rounded-full transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#555] ${
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#555] ${
                 selectedFiles.length >= MAX_IMAGE_COUNT
-                  ? 'text-[#555555] cursor-not-allowed'
+                  ? 'text-[#444] cursor-not-allowed'
                   : 'text-[#9b9b9b] hover:text-[#ececec] hover:bg-[#383838]'
               }`}
               title="Attach files"
@@ -830,11 +804,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <Paperclip className="w-4 h-4" />
             </button>
 
-            {/* Attach Popover Menu */}
+            {/* Attach menu */}
             {attachMenuOpen && (
               <div
                 role="menu"
-                className="absolute left-0 bottom-full mb-2 w-56 rounded-xl bg-[#2a2a2a] border border-[#383838] shadow-2xl p-1.5 z-50 text-xs font-sans space-y-1 animate-in fade-in duration-100"
+                className="absolute left-0 bottom-full mb-1.5 w-52 rounded-xl bg-[#222] border border-[#333] shadow-2xl p-1 z-50 text-xs font-sans space-y-0.5 animate-in fade-in duration-100"
               >
                 <button
                   type="button"
@@ -844,12 +818,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     setAttachMenuOpen(false);
                     fileInputRef.current?.click();
                   }}
-                  className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-[#ececec] hover:bg-[#333333] transition-colors text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[#d4d4d4] hover:bg-[#2e2e2e] transition-colors text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <ImageIcon className="w-4 h-4 text-[#9b9b9b] shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-medium">Add images</span>
-                    <span className="text-[11px] text-[#9b9b9b]">PNG, JPG, WEBP (up to 2)</span>
+                  <ImageIcon className="w-3.5 h-3.5 text-[#777] shrink-0" />
+                  <div>
+                    <div className="font-medium">Add image</div>
+                    <div className="text-[10px] text-[#9b9b9b]">PNG, JPG, WEBP · up to 2</div>
                   </div>
                 </button>
 
@@ -861,78 +835,73 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     setAttachMenuOpen(false);
                     pdfFileInputRef.current?.click();
                   }}
-                  className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-[#ececec] hover:bg-[#333333] transition-colors text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[#d4d4d4] hover:bg-[#2e2e2e] transition-colors text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <FileText className="w-4 h-4 text-[#9b9b9b] shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-medium">Add document (PDF)</span>
-                    <span className="text-[11px] text-[#9b9b9b]">Client-side OCR (up to 10 pages)</span>
+                  <FileText className="w-3.5 h-3.5 text-[#777] shrink-0" />
+                  <div>
+                    <div className="font-medium">Add PDF</div>
+                    <div className="text-[10px] text-[#9b9b9b]">Client-side OCR · up to 10 pages</div>
                   </div>
                 </button>
               </div>
             )}
           </div>
 
-          {/* Right: Optimizer button + Character count + Send button */}
-          <div className="flex items-center space-x-2">
-            {/* Long text character warning (raised to 60,000 for OCR / documents) */}
+          {/* Right: char count + optimize + send */}
+          <div className="flex items-center gap-2">
+            {/* Character count — only visible when long */}
             {input.length > 4000 && (
-              <span className={`text-[11px] font-sans ${input.length > MAX_MESSAGE_CHARS ? 'text-red-400' : 'text-[#9b9b9b]'}`}>
+              <span className={`text-[11px] tabular-nums ${input.length > MAX_MESSAGE_CHARS ? 'text-red-400' : 'text-[#9b9b9b]'}`}>
                 {input.length.toLocaleString()}/{MAX_MESSAGE_CHARS.toLocaleString()}
               </span>
             )}
 
-            {/* Optimizer Button (Appears only when non-whitespace text exists) */}
+            {/* Optimize button — appears when text present */}
             <div
-              className={`transition-all duration-150 ease-out ${
+              className={`transition-all duration-150 ${
                 input.trim().length > 0 && !isLoading
-                  ? 'opacity-100 scale-100'
-                  : 'opacity-0 scale-95 pointer-events-none w-0 overflow-hidden'
+                  ? 'opacity-100'
+                  : 'opacity-0 pointer-events-none w-0 overflow-hidden'
               }`}
             >
               <button
                 type="button"
                 disabled={isOptimizing || isLoading || isOverOptimizeLimit}
                 onClick={handleOptimize}
-                className={`px-3 py-1 rounded-full text-xs transition-colors flex items-center space-x-1.5 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors cursor-pointer ${
                   isOverOptimizeLimit
-                    ? 'bg-[#2a2a2a] text-[#777777] cursor-not-allowed'
-                    : 'bg-[#212121] hover:bg-[#282828] text-[#ececec]'
+                    ? 'text-[#555] cursor-not-allowed'
+                    : 'text-[#9b9b9b] hover:text-[#ececec] hover:bg-[#383838]'
                 }`}
                 title={
                   isOverOptimizeLimit
-                    ? `Input exceeds 2,000 char optimizer limit (${input.length}/2000)`
-                    : 'Rewrite into structured prompt'
+                    ? `Exceeds 2,000-char limit (${input.length}/2000)`
+                    : 'Rewrite as structured prompt'
                 }
               >
                 {isOptimizing ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
-                    <span>Optimizing...</span>
-                  </>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
                 ) : (
-                  <>
-                    <Sparkles className="w-3 h-3 text-emerald-400" />
-                    <span>Optimize</span>
-                  </>
+                  <Sparkles className="w-3.5 h-3.5" />
                 )}
+                <span>{isOptimizing ? 'Optimizing…' : 'Optimize'}</span>
               </button>
             </div>
 
-            {/* Circular Send Button (White circle when enabled, muted when disabled) */}
+            {/* Send button */}
             <button
               type="submit"
               disabled={!canSend}
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                 canSend
-                  ? 'bg-white text-zinc-950 hover:opacity-90 cursor-pointer shadow-xs'
-                  : 'bg-[#424242] text-[#9b9b9b] cursor-not-allowed opacity-60'
+                  ? 'bg-white text-zinc-950 hover:bg-zinc-100 cursor-pointer'
+                  : 'bg-[#3a3a3a] text-[#555] cursor-not-allowed'
               }`}
               title="Send message"
               aria-label="Send message"
             >
               {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <ArrowUp className="w-4 h-4 stroke-[2.5]" />
               )}
@@ -941,17 +910,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </form>
 
-      {/* DLP Status Line & Disclaimer (A6: two small static muted lines with muted shield icon) */}
-      <div className="space-y-1 pt-1 text-center select-none">
-        <div className="flex items-center justify-center space-x-1.5 text-xs text-[#9b9b9b]">
-          <Shield className="w-3.5 h-3.5 text-[#9b9b9b] shrink-0" />
-          <span>
-            DLP Shield is on. Aadhaar, PAN, cards, phone numbers and API keys are masked before sending.
-          </span>
-        </div>
-        <p className="text-[11px] text-[#9b9b9b]">
-          PromptOS AI can make mistakes. Verify critical information.
-        </p>
+      {/* ── DLP status footnote ── */}
+      <div className="flex items-center justify-center gap-1.5 pt-0.5 select-none">
+        <Shield className="w-3 h-3 shrink-0 text-[#9b9b9b]" />
+        <span className="text-xs text-[#9b9b9b]">DLP Shield active · sensitive data is masked before sending</span>
       </div>
     </div>
   );
