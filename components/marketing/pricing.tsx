@@ -8,7 +8,7 @@ export const MarketingPricing: React.FC = () => {
   const betaFeatures = [
     'Full client-side DLP Shield with automatic placeholder restoration',
     'One-click Prompt Optimizer for role & constraint structuring',
-    'Image understanding (up to 2 attachments, 3.5 MB total)',
+    'On-device OCR document reading with mandatory DLP masking',
     'Full chat history, search, and session management',
     'High-speed inference powered by Gemini Flash',
     'Strict row-level security and privacy guarantees',

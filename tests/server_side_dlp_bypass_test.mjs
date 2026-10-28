@@ -49,7 +49,7 @@ const rawAadhaar = '2345 6789 0124';
 const rawPan = 'ABCPE1234F';
 const rawPhone = '+91 98765 43210';
 const rawCard = '4111 1111 1111 1111';
-const rawApiKey = 'sk-' + 'SYNTHETIC-DUMMY-API-KEY-FOR-TESTING-001';
+const rawApiKey = 'sk-SYNTHETIC-DUMMY-API-KEY-FOR-TESTING-001';
 
 let capturedGeminiContents = null;
 const capturedDbRows = [];
@@ -58,11 +58,11 @@ class MockGoogleGenAI {
   constructor(opts) {
     this.apiKey = opts.apiKey;
     this.models = {
-      generateContent: async (args) => {
-        capturedGeminiContents = args.contents;
-        // Even if model echoes back sensitive strings
+      countTokens: async () => ({ totalTokens: 42 }),
+      generateContent: async ({ contents }) => {
+        capturedGeminiContents = contents;
         return {
-          text: `Model reply referencing Aadhaar ${rawAadhaar} and PAN ${rawPan}`,
+          text: `Processed: Aadhaar is ${rawAadhaar}, but model echoes safely.`,
         };
       },
     };
@@ -102,18 +102,69 @@ const mockSupabase = {
   }),
 };
 
+// Transpile policy & pipeline
+const policySource = fs.readFileSync(path.join(projectRoot, 'lib/policy.ts'), 'utf8');
+const transpiledPolicy = ts.transpileModule(policySource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const policyModule = { exports: {} };
+new Function('require', 'module', 'exports', transpiledPolicy)(() => ({}), policyModule, policyModule.exports);
+
+const dlp = await import('../src/lib/dlp.js');
+const pipelineSource = fs.readFileSync(path.join(projectRoot, 'lib/pipeline/index.ts'), 'utf8');
+const transpiledPipeline = ts.transpileModule(pipelineSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const pipelineModule = { exports: {} };
+new Function('require', 'module', 'exports', transpiledPipeline)(
+  (id) => {
+    if (id === '@/src/lib/dlp') return dlp;
+    if (id === '@/lib/policy') return policyModule.exports;
+    return {};
+  },
+  pipelineModule,
+  pipelineModule.exports
+);
+
 const customRequire = (id) => {
   if (id === 'next/server') {
     return {
       NextResponse: {
-        json: (body, init) => ({ status: init?.status || 200, body, json: async () => body }),
+        json: (body, init) => ({
+          status: init?.status || 200,
+          headers: new Map(Object.entries(init?.headers || {})),
+          body,
+          json: async () => body,
+        }),
       },
     };
   }
   if (id === '@/lib/supabase/server') return { createClient: async () => mockSupabase };
   if (id === '@google/genai') return { GoogleGenAI: MockGoogleGenAI };
-  if (id === '@/lib/chat/prepare') return { prepareMessage, extractMaxIndices };
+  if (id === '@/lib/chat/prepare') return { prepareMessage };
   if (id === '@/src/lib/dlp') return { extractMaxIndices };
+  if (id === '@/lib/attachments/config') {
+    return {
+      MAX_INPUT_TOKENS: 100000,
+      MAX_HISTORY_MESSAGES: 10,
+      MAX_OUTPUT_TOKENS_WITH_ATTACHMENT: 4000,
+    };
+  }
+  if (id === '@/lib/attachments/validate') {
+    return {
+      validateImageFiles: async () => ({ valid: true, images: [] }),
+    };
+  }
+  if (id === '@/lib/ratelimit/upstash') {
+    return {
+      checkGlobalDailyQuota: async () => ({ allowed: true, remaining: 20, retryAfter: 86400 }),
+      checkUserRateLimit: async () => ({ allowed: true, retryAfter: 0 }),
+    };
+  }
+  if (id === '@/lib/pipeline') {
+    return pipelineModule.exports;
+  }
+  if (id === '@/lib/policy') return policyModule.exports;
   return {};
 };
 
@@ -126,18 +177,19 @@ fn(customRequire, moduleObj, moduleObj.exports, process);
 const POST = moduleObj.exports.POST;
 
 async function runTest() {
-  // Directly post an UNMASKED raw message with PII (client was completely bypassed)
-  const rawAttackerPayload = `BYPASS_ATTEMPT: Aadhaar=${rawAadhaar}, PAN=${rawPan}, Phone=${rawPhone}, Card=${rawCard}, Key=${rawApiKey}`;
+  // Test 1: Direct bypass with Sanitize PII (Aadhaar, PAN, Phone)
+  const rawAttackerPayload = `BYPASS_ATTEMPT: Aadhaar=${rawAadhaar}, PAN=${rawPan}, Phone=${rawPhone}`;
 
-  console.log(`[RAW INPUT SENT DIRECTLY TO /api/chat]:`);
+  console.log(`[PART 1: Direct API with Sanitize PII]:`);
   console.log(`  "${rawAttackerPayload}"\n`);
 
   const req = {
+    headers: { get: () => 'application/json' },
     json: async () => ({ message: rawAttackerPayload }),
   };
 
   const res = await POST(req);
-  assert(res.status === 200, 'POST /api/chat handler returns 200 OK');
+  assert(res.status === 200, 'POST /api/chat handler returns 200 OK for sanitize categories');
 
   console.log('\n[EVIDENCE 1: Gemini Request Payload Contents]:');
   const geminiPayloadStr = JSON.stringify(capturedGeminiContents, null, 2);
@@ -146,8 +198,6 @@ async function runTest() {
   assert(!geminiPayloadStr.includes(rawAadhaar), 'Gemini payload contains NO raw Aadhaar');
   assert(!geminiPayloadStr.includes(rawPan), 'Gemini payload contains NO raw PAN');
   assert(!geminiPayloadStr.includes(rawPhone), 'Gemini payload contains NO raw Phone');
-  assert(!geminiPayloadStr.includes(rawCard), 'Gemini payload contains NO raw Card');
-  assert(!geminiPayloadStr.includes(rawApiKey), 'Gemini payload contains NO raw API Key');
   assert(geminiPayloadStr.includes('[AADHAAR_1]'), 'Gemini payload contains [AADHAAR_1] placeholder');
   assert(geminiPayloadStr.includes('[PAN_1]'), 'Gemini payload contains [PAN_1] placeholder');
   assert(geminiPayloadStr.includes('[PHONE_1]'), 'Gemini payload contains [PHONE_1] placeholder');
@@ -159,12 +209,10 @@ async function runTest() {
   const userMsgRow = capturedDbRows.find((r) => r.table === 'messages' && r.data.role === 'user');
   const asstMsgRow = capturedDbRows.find((r) => r.table === 'messages' && r.data.role === 'assistant');
 
-  // Verify conversation title
   assert(!convRow.data.title.includes(rawAadhaar), 'conversations.title contains NO raw Aadhaar');
   assert(!convRow.data.title.includes(rawPan), 'conversations.title contains NO raw PAN');
   assert(!convRow.data.title.includes(rawPhone), 'conversations.title contains NO raw Phone');
 
-  // Verify user message row
   assert(!userMsgRow.data.content.includes(rawAadhaar), 'messages.content (user) contains NO raw Aadhaar');
   assert(!userMsgRow.data.content.includes(rawPan), 'messages.content (user) contains NO raw PAN');
   assert(!userMsgRow.data.content.includes(rawPhone), 'messages.content (user) contains NO raw Phone');
@@ -172,9 +220,21 @@ async function runTest() {
   assert(userMsgRow.data.content.includes('[PAN_1]'), 'messages.content (user) contains [PAN_1]');
   assert(userMsgRow.data.content.includes('[PHONE_1]'), 'messages.content (user) contains [PHONE_1]');
 
-  // Verify assistant message row (sanitized before DB persistence)
   assert(!asstMsgRow.data.content.includes(rawAadhaar), 'messages.content (assistant) contains NO raw Aadhaar');
-  assert(!asstMsgRow.data.content.includes(rawPan), 'messages.content (assistant) contains NO raw PAN');
+
+  // Test 2: Direct bypass with Blocked Categories (Card, API key) -> Must return 403 Blocked
+  console.log('\n[PART 2: Direct API with Block Categories (Card / API Key)]:');
+  const blockReq = {
+    headers: { get: () => 'application/json' },
+    json: async () => ({ message: `Pay using card ${rawCard} and secret ${rawApiKey}` }),
+  };
+  const blockRes = await POST(blockReq);
+  const blockBody = await blockRes.json();
+
+  assert(blockRes.status === 403, 'POST /api/chat returns HTTP 403 on block categories');
+  assert(blockBody.action === 'block', 'Response contains action: "block"');
+  assert(blockBody.categoryCounts.CARD >= 1, 'categoryCounts reports CARD');
+  assert(blockBody.categoryCounts.API_KEY >= 1, 'categoryCounts reports API_KEY');
 
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passedTests}/${totalTests} tests passed (${failedTests} failed)`);

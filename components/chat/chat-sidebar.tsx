@@ -12,6 +12,7 @@ import {
   X,
   PanelLeftClose,
   Check,
+  Shield,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -294,6 +295,19 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <span>Search chats</span>
           </button>
         )}
+
+        {/* DLP Scanner & Audit Navigation Link */}
+        <button
+          type="button"
+          onClick={() => {
+            router.push('/dashboard/dlp');
+            onClose();
+          }}
+          className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-[#ececec] hover:bg-[#212121] transition-colors cursor-pointer group"
+        >
+          <Shield className="w-4 h-4 text-emerald-400 group-hover:text-emerald-300 transition-colors" />
+          <span>DLP Shield &amp; Audit</span>
+        </button>
       </div>
 
       {/* Chat List Grouped by Date */}

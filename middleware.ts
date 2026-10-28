@@ -47,13 +47,18 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // ── RULE 2: /dashboard, /dashboard/user, /dashboard/creator redirect to /chat ──
+  // ── RULE 2: /dashboard/dlp is allowed; all other /dashboard/* redirect to /chat ──
   if (pathname.startsWith('/dashboard')) {
     if (!isAuthenticated) {
       const redirectUrl = new URL('/login', request.url);
-      redirectUrl.searchParams.set('next', '/chat');
+      redirectUrl.searchParams.set('next', pathname + search);
       return NextResponse.redirect(redirectUrl);
     }
+    // Allow DLP Shield & Audit page through
+    if (pathname.startsWith('/dashboard/dlp')) {
+      return NextResponse.next();
+    }
+    // All other legacy /dashboard/* routes -> /chat
     return NextResponse.redirect(new URL('/chat', request.url));
   }
 

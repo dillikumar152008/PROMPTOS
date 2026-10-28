@@ -7,28 +7,17 @@ import { scanPrompt } from '@/src/lib/dlp';
 import {
   MAX_OPTIMIZE_INPUT_CHARS,
   MAX_OPTIMIZE_OUTPUT_TOKENS,
-  OPTIMIZE_RATE_LIMIT_WINDOW_MS,
-  OPTIMIZE_RATE_LIMIT_PER_MINUTE,
   PROMPT_OPTIMIZER_SYSTEM_INSTRUCTION,
 } from '@/lib/optimizer/config';
-
-// Best-effort in-memory sliding window rate limiter per user on serverless
-const optimizerTimestamps = new Map<string, number[]>();
-
-function checkOptimizerRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const timestamps = optimizerTimestamps.get(userId) || [];
-  const validTimestamps = timestamps.filter((t) => now - t < OPTIMIZE_RATE_LIMIT_WINDOW_MS);
-
-  if (validTimestamps.length >= OPTIMIZE_RATE_LIMIT_PER_MINUTE) {
-    optimizerTimestamps.set(userId, validTimestamps);
-    return { allowed: false, remaining: 0 };
-  }
-
-  validTimestamps.push(now);
-  optimizerTimestamps.set(userId, validTimestamps);
-  return { allowed: true, remaining: OPTIMIZE_RATE_LIMIT_PER_MINUTE - validTimestamps.length };
-}
+import {
+  checkGlobalDailyQuota,
+  checkUserRateLimit,
+} from '@/lib/ratelimit/upstash';
+import {
+  checkPrePolicyRateLimit,
+  getClientIp,
+} from '@/lib/ratelimit/pre-policy';
+import { runSecurityPipeline } from '@/lib/pipeline';
 
 export async function POST(request: Request) {
   try {
@@ -39,20 +28,29 @@ export async function POST(request: Request) {
       error: authErr,
     } = await supabase.auth.getUser();
 
+    // Cheap pre-policy rate limit check BEFORE DLP / policy evaluation
+    const rateLimitIdentifier = user?.id ? `user:${user.id}` : `ip:${getClientIp(request)}`;
+    if (typeof checkPrePolicyRateLimit === 'function') {
+      const preLimit = await checkPrePolicyRateLimit(rateLimitIdentifier);
+      if (!preLimit.allowed) {
+        return NextResponse.json(
+          {
+            error: 'Rate limit exceeded. Please wait before sending another request.',
+            retryAfter: preLimit.retryAfter,
+          },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(preLimit.retryAfter) },
+          }
+        );
+      }
+    }
+
     if (authErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. In-memory sliding window rate limiter
-    const rateLimit = checkOptimizerRateLimit(user.id);
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: 'You are optimizing prompts too quickly. Please wait a minute and try again.' },
-        { status: 429 }
-      );
-    }
-
-    // 3. Parse and validate input prompt
+    // 2. Parse and validate input prompt
     const body = await request.json().catch(() => null);
     if (!body || typeof body.prompt !== 'string') {
       return NextResponse.json({ error: 'Valid prompt is required.' }, { status: 400 });
@@ -70,27 +68,88 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Server-side DLP check:
-    // If sensitive data was NOT masked by the client, do not mask it silently.
-    // Reject with a friendly error so placeholders always originate from the client.
-    const inputFindings = scanPrompt(rawPrompt);
-    if (inputFindings.length > 0) {
+    const confirmReview = Boolean(body.confirmReview);
+
+    // 3. Security Pipeline Execution (Source of truth)
+    const pipelineResult = await runSecurityPipeline({
+      text: rawPrompt,
+      confirmReview,
+    });
+
+    if (pipelineResult.action === 'block') {
       return NextResponse.json(
-        { error: 'Sensitive information detected. Please try again.' },
-        { status: 400 }
+        {
+          error: 'Prompt optimization blocked by security policy.',
+          action: 'block',
+          reasons: pipelineResult.reasons,
+          policyVersion: pipelineResult.policyVersion,
+          inspectionStatus: pipelineResult.inspectionStatus,
+          categoryCounts: pipelineResult.categoryCounts,
+        },
+        { status: 403 }
+      );
+    }
+
+    if (pipelineResult.action === 'held' || pipelineResult.action === 'review') {
+      return NextResponse.json(
+        {
+          error: pipelineResult.action === 'held'
+            ? 'Request held: inspection could not be completed.'
+            : 'Security review required before optimizing.',
+          action: pipelineResult.action,
+          reasons: pipelineResult.reasons,
+          policyVersion: pipelineResult.policyVersion,
+          inspectionStatus: pipelineResult.inspectionStatus,
+          categoryCounts: pipelineResult.categoryCounts,
+        },
+        { status: 422 }
+      );
+    }
+
+    // 4. Rate limiting: global daily quota + per-user limits (post-policy, pre-Gemini)
+    const globalQuota = await checkGlobalDailyQuota(supabase);
+    if (!globalQuota.allowed) {
+      return NextResponse.json(
+        {
+          error: 'PromptOS has reached its free daily capacity. Please try again tomorrow.',
+          retryAfter: globalQuota.retryAfter,
+          isGlobalLimit: true,
+          action: 'held',
+          reasons: ['Global daily Gemini quota exhausted.'],
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(globalQuota.retryAfter) },
+        }
+      );
+    }
+
+    const userLimit = await checkUserRateLimit(user.id, supabase);
+    if (!userLimit.allowed) {
+      const isRpm = userLimit.reason === 'RPM';
+      const error = isRpm
+        ? 'You are optimizing prompts too quickly. Please wait a moment.'
+        : 'You have reached your daily limit. Quota resets tomorrow.';
+      return NextResponse.json(
+        {
+          error,
+          retryAfter: userLimit.retryAfter,
+          isGlobalLimit: false,
+          action: 'held',
+          reasons: [error],
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(userLimit.retryAfter) },
+        }
       );
     }
 
     // 5. Setup Gemini client
     const model = process.env.GEMINI_MODEL;
-    if (!model) {
-      console.error('[Optimizer Error] GEMINI_MODEL is missing.');
-      return NextResponse.json({ error: 'The AI service is busy, try again.' }, { status: 503 });
-    }
-
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error('[Optimizer Error] GEMINI_API_KEY is missing.');
+    if (!model || !apiKey) {
+      console.error('[Optimizer Error] GEMINI_MODEL or GEMINI_API_KEY missing.');
       return NextResponse.json({ error: 'The AI service is busy, try again.' }, { status: 503 });
     }
 
@@ -108,7 +167,7 @@ export async function POST(request: Request) {
         contents: [
           {
             role: 'user',
-            parts: [{ text: rawPrompt }],
+            parts: [{ text: pipelineResult.safeText }],
           },
         ],
         config: {
@@ -156,7 +215,6 @@ export async function POST(request: Request) {
     }
 
     // 6. Output DLP check:
-    // If output contains any sensitive pattern, discard result and keep original
     const outputFindings = scanPrompt(outputText);
     if (outputFindings.length > 0) {
       return NextResponse.json(
@@ -165,10 +223,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Placeholder integrity check:
-    // - Every placeholder in the input MUST exist in the output
-    // - No new/hallucinated placeholders allowed in the output
-    const inputPlaceholders: string[] = rawPrompt.match(/\[[A-Z_]+_\d+\]/g) || [];
+    // 7. Placeholder integrity check
+    const inputPlaceholders: string[] = pipelineResult.safeText.match(/\[[A-Z_]+_\d+\]/g) || [];
     const outputPlaceholders: string[] = outputText.match(/\[[A-Z_]+_\d+\]/g) || [];
 
     const missing = inputPlaceholders.some((ph: string) => !outputText.includes(ph));
@@ -182,7 +238,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Output length safeguard: must fit comfortably in textarea (4000 chars)
     if (outputText.length > 4000) {
       return NextResponse.json(
         { error: "Couldn't optimize safely, your original is kept." },
@@ -190,17 +245,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Log only counts and status (never log prompt text or optimized text)
-    console.log('[Prompt Optimizer]', {
-      status: 200,
-      inputChars: rawPrompt.length,
-      outputChars: outputText.length,
-      placeholders: inputPlaceholders.length,
-    });
-
     return NextResponse.json({
       success: true,
       optimizedPrompt: outputText,
+      action: pipelineResult.action,
+      reasons: pipelineResult.reasons,
+      policyVersion: pipelineResult.policyVersion,
+      inspectionStatus: pipelineResult.inspectionStatus,
     });
   } catch (err: any) {
     console.error('[Prompt Optimizer Unexpected Error]', err?.message || 'Server error');

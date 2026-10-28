@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Message } from '@/types/chat';
-import { ChatThread } from '@/components/chat/chat-thread';
+import { ChatThread, type PolicyBannerData } from '@/components/chat/chat-thread';
 import { createClient } from '@/lib/supabase/client';
 import { restorePlaceholders } from '@/src/lib/dlp';
 
@@ -17,9 +17,16 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [historyTrimmed, setHistoryTrimmed] = useState(false);
   const [isFetchingHistory, setIsFetchingHistory] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [policyBanner, setPolicyBanner] = useState<PolicyBannerData | null>(null);
 
   const supabase = createClient();
   const conversationMapRef = useRef<Record<string, string>>({});
+  const pendingReviewPayloadRef = useRef<{
+    textToSend: string;
+    placeholderMap?: Record<string, string>;
+    files?: File[];
+    inspectionStatus?: 'complete' | 'partial' | 'failed';
+  } | null>(null);
 
   // Load existing messages for this conversation (RLS enforces own rows only)
   useEffect(() => {
@@ -48,7 +55,27 @@ export default function ConversationPage({ params }: { params: { id: string } })
         if (msgsErr) {
           console.error('Failed to load messages:', msgsErr.message);
         } else {
-          setMessages(msgs || []);
+          // Fetch privacy receipts for this conversation (read via user session so RLS applies)
+          const { data: receipts } = await supabase
+            .from('privacy_receipts')
+            .select('*')
+            .eq('conversation_id', conversationId);
+
+          const receiptMap = new Map<string, any>();
+          if (receipts) {
+            for (const r of receipts) {
+              if (r.message_id) {
+                receiptMap.set(r.message_id, r);
+              }
+            }
+          }
+
+          const enrichedMsgs = (msgs || []).map((m) => ({
+            ...m,
+            receipt: receiptMap.get(m.id) || null,
+          }));
+
+          setMessages(enrichedMsgs);
         }
       } catch (err) {
         console.error('Error loading conversation history:', err);
@@ -60,19 +87,24 @@ export default function ConversationPage({ params }: { params: { id: string } })
     if (conversationId) {
       loadConversationMessages();
     }
-  }, [conversationId, supabase, router]);
+  }, [conversationId, router, supabase]);
 
   const handleSendMessage = async ({
     textToSend,
     placeholderMap,
     files,
+    confirmReview = false,
+    inspectionStatus = 'complete',
   }: {
     textToSend: string;
     placeholderMap?: Record<string, string>;
     files?: File[];
+    confirmReview?: boolean;
+    inspectionStatus?: 'complete' | 'partial' | 'failed';
   }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setPolicyBanner(null);
     setWasLastMasked(Boolean(placeholderMap && Object.keys(placeholderMap).length > 0));
 
     let displayContent = textToSend;
@@ -103,8 +135,10 @@ export default function ConversationPage({ params }: { params: { id: string } })
       let res: Response;
       if (files && files.length > 0) {
         const formData = new FormData();
-        formData.append('message', textToSend || 'Please analyze this image.');
+        formData.append('message', textToSend || 'Please analyze this document.');
         formData.append('conversationId', conversationId);
+        if (confirmReview) formData.append('confirmReview', 'true');
+        formData.append('inspectionStatus', inspectionStatus);
         for (const file of files) {
           formData.append('images', file);
         }
@@ -119,6 +153,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
           body: JSON.stringify({
             conversationId,
             message: textToSend,
+            confirmReview,
+            inspectionStatus,
           }),
         });
       }
@@ -126,12 +162,31 @@ export default function ConversationPage({ params }: { params: { id: string } })
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
+        if (data?.action === 'block' || data?.action === 'review' || data?.action === 'held') {
+          setPolicyBanner({
+            action: data.action,
+            error: data.error,
+            reasons: data.reasons,
+            categoryCounts: data.categoryCounts,
+            receipt: data.receipt || null,
+          });
+          if (data.action === 'review') {
+            pendingReviewPayloadRef.current = { textToSend, placeholderMap, files, inspectionStatus };
+          }
+          if (data.action === 'block' || data.action === 'held') {
+            setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
+          }
+          return;
+        }
         throw new Error(data?.error || 'Something went wrong. Please try again.');
       }
 
       const rawOutput = data?.output || '';
       if (data?.historyTrimmed) {
         setHistoryTrimmed(true);
+      }
+      if (data?.action === 'sanitize') {
+        setWasLastMasked(true);
       }
 
       // Restore placeholders locally in the browser across all turns in this conversation
@@ -146,11 +201,27 @@ export default function ConversationPage({ params }: { params: { id: string } })
         created_at: new Date().toISOString(),
       };
 
+      // Attach receipt to user message if provided
+      if (data?.receipt) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempUserMsg.id ? { ...m, receipt: data.receipt } : m))
+        );
+      }
+
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
       setErrorMessage(err.message || 'The AI service is busy, try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleConfirmReview = () => {
+    if (pendingReviewPayloadRef.current) {
+      const payload = { ...pendingReviewPayloadRef.current, confirmReview: true };
+      pendingReviewPayloadRef.current = null;
+      setPolicyBanner(null);
+      handleSendMessage(payload);
     }
   };
 
@@ -167,6 +238,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
       messages={messages}
       isLoading={isLoading}
       errorMessage={errorMessage}
+      policyBanner={policyBanner}
+      onConfirmReview={handleConfirmReview}
+      onClearPolicyBanner={() => setPolicyBanner(null)}
       wasMasked={wasLastMasked}
       historyTrimmed={historyTrimmed}
       onSendMessage={handleSendMessage}

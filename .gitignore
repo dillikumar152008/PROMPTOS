@@ -29,6 +29,7 @@ backend/app/routers/__pycache__/
 # Environment and key files
 .env
 .env.local
+.env*.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -40,6 +41,9 @@ frontend/.env.local
 
 # Vercel
 .vercel
+
+# Local DLP audit cache
+.dlp_audit_logs.json
 
 # Debug / OS
 npm-debug.log*

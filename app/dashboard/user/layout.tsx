@@ -59,7 +59,7 @@ export default async function UserLayout({
 
   if (role !== 'user') {
     // Defense in depth: bounce unauthorized role immediately
-    redirect('/dashboard/creator');
+    redirect('/chat');
   }
 
   return (

@@ -16,7 +16,7 @@ export const MarketingHero: React.FC = () => {
 
         {/* One-Line Subcopy */}
         <p className="mt-4 text-sm sm:text-base text-zinc-300 max-w-2xl mx-auto leading-relaxed">
-          Ask questions, optimize prompts, and analyze images with built-in client-side data loss prevention. Personal data is masked in your browser and restored in the reply.
+          Ask questions, optimize prompts, and read documents with built-in client-side data loss prevention. Personal data is masked in your browser and restored in the reply.
         </p>
 
         {/* Two High-Contrast Intent CTAs */}

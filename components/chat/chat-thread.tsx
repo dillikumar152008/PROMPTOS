@@ -14,19 +14,37 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  ShieldCheck,
+  ShieldAlert,
+  AlertCircle,
+  Shield,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import type { ClientPrivacyReceipt } from '@/types/chat';
+
+export interface PolicyBannerData {
+  action: 'block' | 'review' | 'held' | 'sanitize';
+  error?: string;
+  reasons?: string[];
+  categoryCounts?: Record<string, number>;
+  receipt?: ClientPrivacyReceipt | null;
+}
 
 interface ChatThreadProps {
   messages: Message[];
   isLoading: boolean;
   errorMessage?: string | null;
+  policyBanner?: PolicyBannerData | null;
+  onConfirmReview?: () => void;
+  onClearPolicyBanner?: () => void;
   wasMasked?: boolean;
   historyTrimmed?: boolean;
   onSendMessage: (payload: {
     textToSend: string;
     placeholderMap?: Record<string, string>;
     files?: File[];
+    confirmReview?: boolean;
+    inspectionStatus?: 'complete' | 'partial' | 'failed';
   }) => void;
 }
 
@@ -120,11 +138,134 @@ const UserBubble: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
+// ── Privacy Receipt Chip Component ─────────────────────────────────────────
+export const PrivacyReceiptChip: React.FC<{
+  receipt?: ClientPrivacyReceipt | null;
+  className?: string;
+}> = ({ receipt, className = '' }) => {
+  const [open, setOpen] = useState(false);
+
+  if (!receipt) return null;
+
+  const receiptStatus = receipt.receiptStatus || receipt.receipt_status;
+  const isRecorded = receiptStatus === 'recorded';
+
+  const action = receipt.action || 'allow';
+  const policyVersion = receipt.policyVersion || receipt.policy_version || 'v1.0';
+  const inspectionStatus = receipt.inspectionStatus || receipt.inspection_status || 'complete';
+  const overrideUsed = Boolean(receipt.overrideUsed ?? receipt.override_used);
+  const categoryCounts = receipt.categoryCounts || receipt.category_counts || {};
+  const categoriesList = Object.entries(categoryCounts);
+
+  const actionBadgeStyles: Record<string, string> = {
+    block: 'text-red-400 bg-red-950/40 border-red-900/50',
+    held: 'text-zinc-300 bg-zinc-800/60 border-zinc-700/50',
+    review: 'text-amber-400 bg-amber-950/40 border-amber-900/50',
+    sanitize: 'text-emerald-400 bg-emerald-950/40 border-emerald-900/50',
+    allow: 'text-blue-400 bg-blue-950/40 border-blue-900/50',
+  };
+
+  return (
+    <div className={`text-left inline-block select-none ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={
+          isRecorded
+            ? "inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-emerald-800/60 bg-emerald-950/30 hover:bg-emerald-950/50 hover:border-emerald-700 text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+            : "inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#333] bg-[#222] hover:bg-[#2a2a2a] hover:border-[#444] text-[11px] text-[#888] hover:text-[#aaa] transition-colors cursor-pointer"
+        }
+        title={isRecorded ? "View minimal privacy-preserving audit receipt" : "Audit receipt not recorded"}
+      >
+        {isRecorded ? (
+          <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+        ) : (
+          <Shield className="w-3 h-3 text-[#777] shrink-0" />
+        )}
+        <span className="font-sans">
+          {isRecorded ? "Privacy receipt ✓" : "Not recorded"}
+        </span>
+        <span className={`text-[9px] uppercase px-1 py-0.5 rounded border font-mono ${actionBadgeStyles[action] || actionBadgeStyles.allow}`}>
+          {action}
+        </span>
+        {open ? <ChevronUp className="w-2.5 h-2.5 text-[#777]" /> : <ChevronDown className="w-2.5 h-2.5 text-[#777]" />}
+      </button>
+
+      {open && (
+        <div className="mt-1.5 p-3 rounded-lg border border-[#333] bg-[#1a1a1a] text-xs text-[#c4c4c4] space-y-2 max-w-sm animate-in fade-in duration-100 shadow-xl">
+          <div className="flex items-center justify-between pb-1.5 border-b border-[#2a2a2a]">
+            <span className="font-mono text-[11px] font-semibold text-[#ececec]">Audit Metadata</span>
+            <span className="font-mono text-[10px] text-[#777]">Policy {policyVersion}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-[#777] block text-[10px]">Record Status</span>
+              <span className={`font-mono text-[10px] font-medium ${isRecorded ? 'text-emerald-400' : 'text-[#888]'}`}>
+                {receiptStatus || 'unavailable'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[#777] block text-[10px]">Decision</span>
+              <span className="font-medium text-[#ececec] capitalize">{action}</span>
+            </div>
+            <div>
+              <span className="text-[#777] block text-[10px]">Inspection</span>
+              <span className="font-medium text-[#ececec] capitalize">{inspectionStatus}</span>
+            </div>
+            <div>
+              <span className="text-[#777] block text-[10px]">User Override</span>
+              <span className="font-medium text-[#ececec]">{overrideUsed ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
+              <span className="text-[#777] block text-[10px]">Receipt ID</span>
+              <span className="font-mono text-[10px] text-[#999] truncate block" title={receipt.id}>
+                {receipt.id ? `${receipt.id.slice(0, 8)}…` : 'none'}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-1.5 border-t border-[#2a2a2a]">
+            <span className="text-[#777] block text-[10px] mb-1">Masked / Detected Categories</span>
+            {categoriesList.length === 0 ? (
+              <span className="text-[11px] text-[#9b9b9b] italic">None (zero findings)</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {categoriesList.map(([cat, count]) => (
+                  <span
+                    key={cat}
+                    className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#262626] border border-[#383838] text-[#d4d4d4]"
+                  >
+                    <span>{cat}:</span>
+                    <span className="text-emerald-400 font-semibold">{count}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {receipt.attachmentsTotal !== null && receipt.attachmentsTotal !== undefined && (
+            <div className="pt-1 border-t border-[#2a2a2a] text-[10px] text-[#777]">
+              <span>Attachments Inspected: </span>
+              <span className="text-[#bbb]">
+                {receipt.attachmentsInspected ?? 0} / {receipt.attachmentsTotal} (client-reported)
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main thread ─────────────────────────────────────────────────────────────
 export const ChatThread: React.FC<ChatThreadProps> = ({
   messages,
   isLoading,
   errorMessage,
+  policyBanner,
+  onConfirmReview,
+  onClearPolicyBanner,
   wasMasked,
   historyTrimmed = false,
   onSendMessage,
@@ -196,6 +337,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                 onSendMessage={onSendMessage}
                 isLoading={isLoading}
                 errorMessage={errorMessage}
+                policyBanner={policyBanner}
+                onConfirmReview={onConfirmReview}
+                onClearPolicyBanner={onClearPolicyBanner}
                 existingMessages={messages}
                 prefillValue={prefillPrompt}
                 triggerAttach={triggerAttach}
@@ -244,8 +388,13 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
                 if (isUser) {
                   return (
-                    <div key={msgKey} className="flex justify-end">
+                    <div key={msgKey} className="flex flex-col items-end space-y-1">
                       <UserBubble content={msg.content} />
+                      {msg.receipt && (
+                        <div className="mr-1">
+                          <PrivacyReceiptChip receipt={msg.receipt} />
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -311,6 +460,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
               onSendMessage={onSendMessage}
               isLoading={isLoading}
               errorMessage={errorMessage}
+              policyBanner={policyBanner}
+              onConfirmReview={onConfirmReview}
+              onClearPolicyBanner={onClearPolicyBanner}
               existingMessages={messages}
               triggerAttach={triggerAttach}
             />

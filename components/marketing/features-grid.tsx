@@ -39,9 +39,9 @@ export const MarketingFeaturesGrid: React.FC = () => {
       icon: Sparkles,
     },
     {
-      tag: 'Vision',
-      title: 'Image understanding',
-      description: 'Attach up to 2 PNG, JPG or WEBP images (3.5 MB each) and ask questions about them.',
+      tag: 'OCR & Documents',
+      title: 'Private document reading',
+      description: 'Images and documents are read locally on your device with private OCR. Only sanitized extracted text is sent to the model.',
       icon: ImageIcon,
     },
     {
